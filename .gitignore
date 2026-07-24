@@ -1,0 +1,13 @@
+# OS
+.DS_Store
+
+# Editor
+*.swp
+*.swo
+
+# Logs
+*.log
+
+# Env / secrets (none exist yet, but keep this ready for the real-deployment phase)
+.env
+.env.local

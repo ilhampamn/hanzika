@@ -1,0 +1,667 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Hanzika · Chapter Test Question Lab</title>
+  <style>
+    :root{
+      --bg:#f3f3f5;
+      --surface:#fff;
+      --surface-2:#f8f8f9;
+      --border:#e4e4e7;
+      --border-2:#cacace;
+      --text:#3f3f46;
+      --text-lo:#71717a;
+      --text-faint:#a1a1aa;
+      --pink:#ff4b91;
+      --pink-dark:#d93678;
+      --pink-bg:#fff0f6;
+      --green:#58cc02;
+      --green-dark:#46a302;
+      --green-bg:#e4ffc9;
+      --red:#ff4b4b;
+      --red-dark:#d93434;
+      --red-bg:#ffebeb;
+      --blue:#1cb0f6;
+      --blue-bg:#ddf4ff;
+      --yellow:#ffc800;
+      --yellow-bg:#fff6cc;
+      --shadow:0 6px 0 var(--border);
+      --radius:20px;
+    }
+    *{ box-sizing:border-box; margin:0; padding:0; }
+    body{
+      min-height:100vh; background:var(--bg); color:var(--text);
+      font-family:Nunito,Inter,ui-rounded,"SF Pro Rounded",system-ui,-apple-system,sans-serif;
+    }
+    button,input{ font:inherit; }
+    button{ color:inherit; }
+    [hidden]{ display:none !important; }
+    .app{ min-height:100vh; display:grid; grid-template-rows:auto 1fr; grid-template-columns:minmax(0,1fr); }
+    .topbar{
+      position:sticky; top:0; z-index:10; display:flex; align-items:center; gap:18px;
+      padding:16px 22px; border-bottom:2px solid var(--border); background:rgba(255,255,255,.96);
+      backdrop-filter:blur(12px);
+    }
+    .brand{ display:flex; align-items:center; gap:10px; min-width:250px; }
+    .brand-mark{
+      width:42px; height:42px; border-radius:13px; display:grid; place-items:center;
+      background:var(--pink); color:white; font-size:22px; font-weight:950; box-shadow:0 4px 0 var(--pink-dark);
+    }
+    .brand h1{ font-size:16px; font-weight:950; line-height:1.1; }
+    .brand p{ margin-top:3px; color:var(--text-faint); font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:.07em; }
+    .topbar-progress{ flex:1; max-width:620px; }
+    .progress-copy{ display:flex; justify-content:space-between; gap:10px; margin-bottom:7px; color:var(--text-lo); font-size:12px; font-weight:850; }
+    .progress-track{ height:10px; overflow:hidden; border-radius:99px; background:var(--border); }
+    .progress-fill{ height:100%; border-radius:inherit; background:var(--pink); transition:width .25s ease; }
+    .server-status{
+      margin-left:auto; display:flex; align-items:center; gap:7px; white-space:nowrap;
+      padding:8px 11px; border:2px solid var(--border); border-radius:99px;
+      color:var(--text-faint); background:var(--surface-2); font-size:11px; font-weight:900;
+    }
+    .server-dot{ width:8px; height:8px; border-radius:50%; background:var(--text-faint); }
+    .server-status.is-ready{ color:var(--green-dark); border-color:var(--green); background:var(--green-bg); }
+    .server-status.is-ready .server-dot{ background:var(--green); }
+    .server-status.is-error{ color:var(--red-dark); border-color:var(--red); background:var(--red-bg); }
+    .server-status.is-error .server-dot{ background:var(--red); }
+
+    .workspace{ display:grid; grid-template-columns:280px minmax(0,1fr) 300px; min-height:0; }
+    .catalog,.notes{ position:sticky; top:76px; height:calc(100vh - 76px); overflow:auto; background:var(--surface); }
+    .catalog{ border-right:2px solid var(--border); padding:18px 14px; }
+    .notes{ border-left:2px solid var(--border); padding:22px 18px; }
+    .rail-label{ margin:0 8px 10px; color:var(--text-faint); font-size:10px; font-weight:950; text-transform:uppercase; letter-spacing:.1em; }
+    .type-list{ display:flex; flex-direction:column; gap:6px; }
+    .type-button{
+      width:100%; display:grid; grid-template-columns:34px 1fr auto; align-items:center; gap:10px;
+      padding:10px; border:2px solid transparent; border-radius:14px; background:transparent; text-align:left; cursor:pointer;
+    }
+    .type-button:hover{ background:var(--surface-2); }
+    .type-button.is-active{ border-color:var(--pink); background:var(--pink-bg); }
+    .type-number{ width:34px; height:34px; border-radius:10px; display:grid; place-items:center; background:var(--surface-2); color:var(--text-faint); font-size:12px; font-weight:950; }
+    .type-button.is-active .type-number{ background:var(--pink); color:white; }
+    .type-name{ display:block; font-size:12.5px; font-weight:900; }
+    .type-skill{ display:block; margin-top:2px; color:var(--text-faint); font-size:10px; font-weight:800; text-transform:uppercase; }
+    .type-format{ padding:3px 7px; border-radius:99px; background:var(--surface-2); color:var(--text-faint); font-size:9px; font-weight:950; text-transform:uppercase; }
+
+    .stage{ padding:30px clamp(20px,4vw,54px) 46px; overflow:auto; }
+    .stage-inner{ width:min(100%,760px); margin:0 auto; }
+    .eyebrow{ color:var(--pink-dark); font-size:11px; font-weight:950; text-transform:uppercase; letter-spacing:.1em; }
+    .stage-title{ margin-top:7px; font-size:clamp(24px,3vw,34px); font-weight:950; letter-spacing:-.025em; }
+    .stage-lede{ margin-top:7px; color:var(--text-lo); font-size:14px; font-weight:700; line-height:1.5; }
+    .question-card{
+      margin-top:24px; padding:clamp(20px,4vw,32px); border:2px solid var(--border); border-radius:26px;
+      background:var(--surface); box-shadow:var(--shadow);
+    }
+    .question-meta{ display:flex; align-items:center; gap:7px; flex-wrap:wrap; }
+    .pill{ padding:5px 9px; border-radius:99px; background:var(--surface-2); color:var(--text-lo); font-size:10px; font-weight:950; text-transform:uppercase; letter-spacing:.04em; }
+    .pill.is-skill{ background:var(--blue-bg); color:#0878ad; }
+    .question-prompt{ margin-top:18px; font-size:clamp(20px,2.6vw,28px); font-weight:950; line-height:1.25; }
+    .question-context{ margin-top:10px; padding:13px 15px; border-left:4px solid var(--pink); border-radius:0 12px 12px 0; background:var(--pink-bg); font-family:"PingFang SC","Noto Sans SC",sans-serif; font-size:19px; font-weight:800; line-height:1.5; }
+    .audio-panel{ display:flex; align-items:center; gap:12px; margin-top:18px; padding:13px; border:2px solid #9bdcff; border-radius:16px; background:var(--blue-bg); }
+    .audio-button{
+      width:44px; height:44px; flex:0 0 44px; border:0; border-radius:14px; display:grid; place-items:center;
+      background:var(--blue); color:white; cursor:pointer; box-shadow:0 4px 0 #168bc2; font-size:20px;
+    }
+    .audio-button:active{ transform:translateY(3px); box-shadow:0 1px 0 #168bc2; }
+    .audio-button:disabled{ opacity:.55; cursor:wait; }
+    .audio-copy b{ display:block; font-size:13px; font-weight:950; }
+    .audio-copy span{ display:block; margin-top:3px; color:#39758e; font-size:11px; font-weight:800; }
+    .response-area{ margin-top:22px; }
+    .option-list{ display:grid; gap:9px; }
+    .option{
+      width:100%; display:flex; align-items:center; gap:11px; padding:13px 14px; border:2px solid var(--border);
+      border-radius:14px; background:var(--surface); text-align:left; cursor:pointer; font-size:14px; font-weight:800;
+    }
+    .option:hover{ border-color:var(--border-2); background:var(--surface-2); }
+    .option.is-selected{ border-color:var(--pink); background:var(--pink-bg); }
+    .option.is-correct{ border-color:var(--green); background:var(--green-bg); color:var(--green-dark); }
+    .option.is-wrong{ border-color:var(--red); background:var(--red-bg); color:var(--red-dark); }
+    .option-letter{ width:28px; height:28px; flex:0 0 28px; display:grid; place-items:center; border-radius:9px; background:var(--surface-2); color:var(--text-faint); font-size:11px; font-weight:950; }
+    .option.is-selected .option-letter{ background:var(--pink); color:white; }
+    .input-label{ display:block; margin-bottom:7px; color:var(--text-lo); font-size:12px; font-weight:900; }
+    .answer-input{ width:100%; padding:14px 15px; border:2px solid var(--border); border-radius:14px; background:var(--surface-2); color:var(--text); font-size:17px; font-weight:800; }
+    .answer-input:focus{ outline:0; border-color:var(--pink); background:var(--surface); box-shadow:0 0 0 4px var(--pink-bg); }
+    .order-answer,.token-bank{ min-height:58px; display:flex; align-items:center; gap:8px; flex-wrap:wrap; padding:10px; border:2px dashed var(--border-2); border-radius:15px; background:var(--surface-2); }
+    .order-answer{ margin-bottom:12px; }
+    .order-placeholder{ color:var(--text-faint); font-size:12px; font-weight:800; }
+    .token{ padding:9px 11px; border:2px solid var(--border); border-radius:11px; background:var(--surface); cursor:pointer; font-family:"PingFang SC","Noto Sans SC",sans-serif; font-size:15px; font-weight:850; box-shadow:0 3px 0 var(--border); }
+    .token:active{ transform:translateY(2px); box-shadow:0 1px 0 var(--border); }
+    .token.is-used{ opacity:.25; pointer-events:none; }
+    .token.is-answer{ border-color:var(--pink); background:var(--pink-bg); box-shadow:0 3px 0 #ffc3da; }
+    .feedback{ margin-top:18px; padding:15px; border:2px solid var(--border); border-radius:15px; background:var(--surface-2); }
+    .feedback.is-correct{ border-color:var(--green); background:var(--green-bg); }
+    .feedback.is-wrong{ border-color:var(--red); background:var(--red-bg); }
+    .feedback b{ display:block; font-size:14px; font-weight:950; }
+    .feedback p{ margin-top:5px; color:var(--text-lo); font-size:13px; font-weight:700; line-height:1.5; }
+    .transcript{ margin-top:10px; padding-top:10px; border-top:1px solid rgba(0,0,0,.08); }
+    .transcript span{ color:var(--text-faint); font-size:10px; font-weight:950; text-transform:uppercase; letter-spacing:.07em; }
+    .transcript p{ font-family:"PingFang SC","Noto Sans SC",sans-serif; color:var(--text); font-size:15px; }
+    .feedback.is-revealed{ border-color:var(--yellow); background:var(--yellow-bg); }
+    /* Picture-choice listening */
+    .picture-grid{ display:grid; grid-template-columns:repeat(2,1fr); gap:11px; }
+    .picture-option{ display:flex; flex-direction:column; align-items:center; gap:9px; padding:20px 12px; border:2px solid var(--border); border-radius:16px; background:var(--surface); cursor:pointer; }
+    .picture-option:hover{ border-color:var(--border-2); background:var(--surface-2); }
+    .picture-option.is-selected{ border-color:var(--pink); background:var(--pink-bg); }
+    .picture-option.is-correct{ border-color:var(--green); background:var(--green-bg); }
+    .picture-option.is-wrong{ border-color:var(--red); background:var(--red-bg); }
+    .picture-emoji{ font-size:46px; line-height:1; }
+    .picture-caption{ font-size:11px; font-weight:900; color:var(--text-faint); text-transform:uppercase; letter-spacing:.04em; }
+    .picture-option.is-correct .picture-caption{ color:var(--green-dark); }
+    .picture-option.is-wrong .picture-caption{ color:var(--red-dark); }
+    /* Reading passage */
+    .reading-passage{ margin-top:16px; padding:16px 18px; border:2px solid var(--border); border-radius:16px; background:var(--surface-2); font-family:"PingFang SC","Noto Sans SC",sans-serif; font-size:18px; font-weight:700; line-height:1.75; }
+    /* Error spotting */
+    .error-sentence{ display:flex; align-items:center; gap:6px; flex-wrap:wrap; padding:14px; border:2px dashed var(--border-2); border-radius:15px; background:var(--surface-2); }
+    .error-word{ padding:8px 11px; border:2px solid var(--border); border-radius:11px; background:var(--surface); cursor:pointer; font-family:"PingFang SC","Noto Sans SC",sans-serif; font-size:17px; font-weight:850; }
+    .error-word:hover{ border-color:var(--border-2); }
+    .error-word.is-selected{ border-color:var(--pink); background:var(--pink-bg); }
+    .error-word.is-correct{ border-color:var(--green); background:var(--green-bg); color:var(--green-dark); }
+    .error-word.is-wrong{ border-color:var(--red); background:var(--red-bg); color:var(--red-dark); }
+    .question-actions{ display:flex; align-items:center; gap:9px; margin-top:20px; }
+    .action{
+      min-height:43px; padding:10px 15px; border:2px solid var(--border); border-radius:13px;
+      background:var(--surface); cursor:pointer; font-size:12px; font-weight:950; text-transform:uppercase; letter-spacing:.04em;
+    }
+    .action:hover{ background:var(--surface-2); }
+    .action.primary{ margin-left:auto; border-color:var(--pink); background:var(--pink); color:white; box-shadow:0 4px 0 var(--pink-dark); }
+    .action.primary:active{ transform:translateY(3px); box-shadow:0 1px 0 var(--pink-dark); }
+    .action:disabled{ opacity:.45; cursor:not-allowed; }
+    .stage-navigation{ display:flex; justify-content:space-between; gap:12px; margin-top:18px; }
+    .nav-button{ padding:10px 13px; border:0; border-radius:12px; background:transparent; color:var(--text-lo); cursor:pointer; font-size:12px; font-weight:900; }
+    .nav-button:hover{ background:var(--surface); color:var(--text); }
+
+    .notes h2{ font-size:17px; font-weight:950; }
+    .notes-intro{ margin-top:6px; color:var(--text-faint); font-size:12px; font-weight:700; line-height:1.45; }
+    .note-block{ margin-top:18px; padding-top:17px; border-top:2px solid var(--surface-2); }
+    .note-label{ color:var(--text-faint); font-size:9px; font-weight:950; text-transform:uppercase; letter-spacing:.1em; }
+    .note-value{ margin-top:5px; font-size:13px; font-weight:850; line-height:1.45; }
+    .placement{ display:inline-flex; margin-top:7px; padding:6px 9px; border-radius:99px; background:var(--pink-bg); color:var(--pink-dark); font-size:10px; font-weight:950; }
+    .answer-key{ margin-top:18px; border:2px solid var(--border); border-radius:14px; overflow:hidden; }
+    .answer-key summary{ padding:12px 13px; cursor:pointer; background:var(--surface-2); font-size:12px; font-weight:950; }
+    .answer-key-content{ padding:13px; }
+    .answer-key-content b{ display:block; font-family:"PingFang SC","Noto Sans SC",sans-serif; font-size:15px; }
+    .answer-key-content p{ margin-top:6px; color:var(--text-lo); font-size:12px; font-weight:700; line-height:1.5; }
+    .keyboard-note{ margin-top:18px; color:var(--text-faint); font-size:10px; font-weight:800; line-height:1.5; }
+
+    @media(max-width:1080px){
+      .workspace{ grid-template-columns:250px minmax(0,1fr); }
+      .notes{ position:static; height:auto; grid-column:1/-1; border-left:0; border-top:2px solid var(--border); }
+      .notes-grid{ display:grid; grid-template-columns:repeat(3,1fr); gap:16px; }
+      .note-block{ margin-top:12px; }
+    }
+    @media(max-width:760px){
+      .topbar{ padding:12px 14px; flex-wrap:wrap; }
+      .brand{ min-width:0; }
+      .brand-copy p,.server-status span{ display:none; }
+      .topbar-progress{ order:3; flex-basis:100%; max-width:none; }
+      .workspace{ display:block; }
+      .catalog{ position:static; height:auto; overflow:auto; border-right:0; border-bottom:2px solid var(--border); }
+      .rail-label{ display:none; }
+      .type-list{ flex-direction:row; overflow:auto; padding-bottom:3px; }
+      .type-button{ min-width:170px; }
+      .type-format{ display:none; }
+      .stage{ padding:24px 14px 34px; }
+      .notes-grid{ grid-template-columns:1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-mark">题</div>
+        <div class="brand-copy"><h1>Chapter Test Question Lab</h1><p>HSK 2 · Interaction playground</p></div>
+      </div>
+      <div class="topbar-progress">
+        <div class="progress-copy"><span id="progressName">Question type</span><span id="progressCount">1 / 10</span></div>
+        <div class="progress-track"><div class="progress-fill" id="progressFill"></div></div>
+      </div>
+      <div class="server-status" id="serverStatus"><i class="server-dot"></i><span>Checking audio</span></div>
+    </header>
+
+    <div class="workspace">
+      <aside class="catalog" aria-label="Question types">
+        <div class="rail-label">Question catalogue</div>
+        <nav class="type-list" id="typeList"></nav>
+      </aside>
+
+      <main class="stage">
+        <div class="stage-inner">
+          <div class="eyebrow" id="questionEyebrow">Listening · Multiple choice</div>
+          <h2 class="stage-title" id="questionTitle">Listening for a detail</h2>
+          <p class="stage-lede" id="questionLede"></p>
+
+          <section class="question-card" id="questionCard" aria-live="polite"></section>
+
+          <div class="stage-navigation">
+            <button class="nav-button" id="previousButton">← Previous type</button>
+            <button class="nav-button" id="nextButton">Next type →</button>
+          </div>
+        </div>
+      </main>
+
+      <aside class="notes">
+        <h2>Design notes</h2>
+        <p class="notes-intro">This panel explains what the example measures and where it belongs in the proposed chapter-test system.</p>
+        <div class="notes-grid">
+          <div class="note-block"><div class="note-label">Measures</div><div class="note-value" id="noteMeasures"></div></div>
+          <div class="note-block"><div class="note-label">Response</div><div class="note-value" id="noteResponse"></div></div>
+          <div class="note-block"><div class="note-label">Recommended placement</div><div class="placement" id="notePlacement"></div></div>
+          <div class="note-block"><div class="note-label">Design rule</div><div class="note-value" id="noteRule"></div></div>
+        </div>
+        <details class="answer-key">
+          <summary>Show answer key</summary>
+          <div class="answer-key-content" id="answerKey"></div>
+        </details>
+        <p class="keyboard-note">Keyboard: ←/→ changes question type. Enter checks typed answers. Audio comes from the existing local Alibaba TTS endpoint.</p>
+      </aside>
+    </div>
+  </div>
+
+  <script>
+    const QUESTIONS = [
+      {
+        id:'listening-detail', title:'Listening for a detail', skill:'Listening', format:'Choice', placement:'Test 2 · Listening',
+        lede:'The learner hears a short sentence and extracts one concrete detail.',
+        prompt:'When does the speaker recommend visiting Beijing?',
+        audio:'我觉得九月去北京旅游最好。', transcript:'我觉得九月去北京旅游最好。',
+        options:['March','June','September','December'], answer:'September',
+        explanation:'九月 means September, and 最好 marks it as the speaker’s recommendation.',
+        measures:'Recognition of a time expression inside natural speech.', response:'Single-choice meaning selection.',
+        rule:'Do not show the Mandarin transcript before the learner answers.'
+      },
+      {
+        id:'listening-gist', title:'Listening for the main idea', skill:'Listening', format:'Choice', placement:'Test 2 · Listening',
+        lede:'A slightly longer utterance tests the overall message rather than one isolated word.',
+        prompt:'What is the speaker planning to do?',
+        audio:'下午我想和朋友一起运动，然后我们去吃饭。', transcript:'下午我想和朋友一起运动，然后我们去吃饭。',
+        options:['Study alone','Exercise with a friend, then eat','Travel to Beijing','Buy sports clothes'], answer:'Exercise with a friend, then eat',
+        explanation:'The speaker plans to exercise with a friend and then go eat.',
+        measures:'Gist comprehension across two connected actions.', response:'Single-choice summary selection.',
+        rule:'Distractors should be plausible chapter ideas, not random unrelated words.'
+      },
+      {
+        id:'picture-listening', title:'Picture-choice listening', skill:'Listening', format:'Picture', placement:'Test 1 · Foundations',
+        lede:'The learner hears a word and taps the matching picture — no English or Hanzi to lean on.',
+        prompt:'Tap the picture that matches the word you hear.',
+        audio:'旅游', transcript:'旅游 · lǚyóu',
+        options:[
+          {emoji:'✈️', label:'travel', value:'travel'},
+          {emoji:'🏃', label:'exercise', value:'exercise'},
+          {emoji:'📖', label:'study', value:'study'},
+          {emoji:'🍜', label:'eat', value:'eat'}
+        ], answer:'travel',
+        explanation:'旅游 (lǚyóu) means “to travel,” shown by the plane. Choosing a picture keeps the task in Chinese instead of translating to English.',
+        measures:'Direct sound-to-concept mapping, with no text crutch.', response:'Single-choice picture selection.',
+        rule:'Placeholder emoji stand in for the app’s real vocabulary images.'
+      },
+      {
+        id:'audio-word', title:'Word recognition from audio', skill:'Listening + vocabulary', format:'Choice', placement:'Test 2 · Listening',
+        lede:'The learner identifies a chapter word by sound without seeing its Hanzi or pinyin.',
+        prompt:'What does the word you hear mean?',
+        audio:'旅游', transcript:'旅游 · lǚyóu',
+        options:['to travel','to exercise','to study','to rest'], answer:'to travel',
+        explanation:'旅游 (lǚyóu) means “to travel” or “to take a trip.”',
+        measures:'Sound-to-meaning vocabulary recall.', response:'Single-choice English meaning.',
+        rule:'Keep the prompt text neutral so it does not reveal the word.'
+      },
+      {
+        id:'audio-grammar', title:'Grammar meaning through audio', skill:'Listening + grammar', format:'Choice', placement:'Test 2 · Listening',
+        lede:'Grammar is assessed through the meaning carried by a spoken sentence.',
+        prompt:'What does 最 communicate in this sentence?',
+        audio:'九月去北京旅游最好。', transcript:'九月去北京旅游最好。',
+        options:['September is the earliest time','September is the best time','September is also acceptable','September is too late'], answer:'September is the best time',
+        explanation:'最 before 好 creates 最好, “the best.”',
+        measures:'Understanding a grammar marker while processing speech.', response:'Single-choice interpretation.',
+        rule:'Ask about the meaning of the pattern, not its terminology.'
+      },
+      {
+        id:'audio-cloze', title:'Audio-supported cloze', skill:'Listening + vocabulary', format:'Choice', placement:'Test 2 · Listening',
+        lede:'The written frame reduces memory load while audio supplies the missing chapter word.',
+        prompt:'Listen and choose the missing word.', context:'我觉得九月去北京旅游 ___。',
+        audio:'我觉得九月去北京旅游最好。', transcript:'我觉得九月去北京旅游最好。',
+        options:['一起','最好','为什么','运动'], answer:'最好',
+        explanation:'The complete sentence is 我觉得九月去北京旅游最好。',
+        measures:'Mapping spoken language into a written sentence frame.', response:'Single-choice Hanzi cloze.',
+        rule:'Use this as a bridge task; it is less demanding than audio-only comprehension.'
+      },
+      {
+        id:'dictation', title:'Short dictation', skill:'Listening + production', format:'Input', placement:'Test 2 or Test 3',
+        lede:'The learner types a short sentence after hearing it, combining listening and written recall.',
+        prompt:'Type the sentence you hear in Chinese characters.',
+        audio:'我们一起去吧。', transcript:'我们一起去吧。', placeholder:'Type the sentence in Hanzi',
+        answer:'我们一起去吧', accepted:['我们一起去吧','我们一起去吧。'],
+        explanation:'The sentence is 我们一起去吧, “Let’s go together.”',
+        measures:'Precise sound-to-Hanzi production for a short familiar sentence.', response:'Typed Hanzi with punctuation ignored.',
+        rule:'Keep dictation short and score normalized punctuation, not formatting.'
+      },
+      {
+        id:'reading-comprehension', title:'Reading comprehension', skill:'Reading', format:'Choice', placement:'Test 2 · Reading',
+        lede:'The learner reads a short passage and answers a question that needs the whole text.',
+        passage:'我叫小明。九月我想和朋友一起去北京旅游，因为我觉得那个时候天气最好。',
+        prompt:'When does Xiaoming want to travel to Beijing, and with whom?',
+        options:['In summer, alone','In September, with a friend','In December, for work','He does not want to go'], answer:'In September, with a friend',
+        explanation:'The passage says 九月…和朋友一起去北京旅游 — September, together with a friend. The reason given is the good weather.',
+        measures:'Comprehension of a connected multi-sentence text, not single-word matching.', response:'Single-choice comprehension.',
+        rule:'The correct answer must require reading the whole passage, not matching one keyword.'
+      },
+      {
+        id:'vocabulary-recognition', title:'Vocabulary recognition', skill:'Vocabulary', format:'Choice', placement:'Test 1 · Foundations',
+        lede:'A direct item checks whether the learner knows a key chapter word.',
+        prompt:'Which chapter word means “together”?',
+        options:['运动','为什么','一起','觉得'], answer:'一起',
+        explanation:'一起 (yìqǐ) means “together.”',
+        measures:'Hanzi-to-meaning recognition.', response:'Single-choice chapter word.',
+        rule:'Use direct recognition sparingly; prefer context once basic recall is established.'
+      },
+      {
+        id:'context-cloze', title:'Vocabulary in context', skill:'Vocabulary', format:'Choice', placement:'Test 1 · Foundations',
+        lede:'The learner chooses vocabulary using the meaning of a complete sentence.',
+        prompt:'Choose the chapter word that completes the sentence.', context:'下午我想和朋友 ___ 运动。',
+        options:['最','新','一起','为什么'], answer:'一起',
+        explanation:'和朋友一起运动 means “exercise together with a friend.”',
+        measures:'Vocabulary selection inside a meaningful sentence.', response:'Single-choice Hanzi cloze.',
+        rule:'Distractors should fit the chapter but fail grammatically or semantically here.'
+      },
+      {
+        id:'grammar-choice', title:'Grammar pattern selection', skill:'Grammar', format:'Choice', placement:'Test 1 · Foundations',
+        lede:'The learner selects the sentence that uses the target structure naturally.',
+        prompt:'Which sentence correctly asks for a reason?',
+        options:['你为什么想去北京？','你想去北京为什么？','你想为什么去北京？','你为什么去北京想？'], answer:'你为什么想去北京？',
+        explanation:'为什么 comes before the verb phrase: subject + 为什么 + 想去 + place → 你为什么想去北京？A very common learner error is stranding 为什么 at the end (你想去北京为什么？), copying English word order “…go to Beijing why?”.',
+        measures:'Recognition of natural word order with 为什么.', response:'Single-choice sentence selection.',
+        rule:'Wrong options should represent realistic learner errors, not scrambled word-soup.'
+      },
+      {
+        id:'functional-response', title:'Functional response', skill:'Communication', format:'Choice', placement:'Test 3 · Mastery',
+        lede:'The learner picks a natural reply to a real conversational prompt — meaning in use, not just grammar.',
+        prompt:'Your friend asks the question below. Which reply is natural?', context:'你什么时候去北京？',
+        options:['我九月去。','我最好北京。','为什么去北京？','北京很大。'], answer:'我九月去。',
+        explanation:'你什么时候…？ asks “when,” so a natural reply gives a time: 我九月去 (“I’m going in September”). The others are word-level plausible but do not answer the question.',
+        measures:'Pragmatic ability to respond appropriately in context.', response:'Single-choice reply selection.',
+        rule:'Distractors should be well-formed words but pragmatically wrong answers to the prompt.'
+      },
+      {
+        id:'error-spot', title:'Error spotting', skill:'Grammar', format:'ErrorSpot', placement:'Test 3 · Mastery',
+        lede:'The learner finds the misplaced word — a monitoring skill, harder than picking a correct option.',
+        prompt:'This sentence is incorrect. Tap the word that is in the wrong position.',
+        segments:['你','想','为什么','去','北京','？'], answer:'为什么',
+        explanation:'为什么 should come before 想, not after it: the correct order is 你为什么想去北京？Here 为什么 wrongly sits between 想 and 去.',
+        measures:'Noticing and monitoring — detecting an error, not just recognizing a correct form.', response:'Tap the incorrect word.',
+        rule:'Include exactly one clear error; the rest of the sentence must be correct.'
+      },
+      {
+        id:'sentence-order', title:'Sentence ordering', skill:'Production', format:'Order', placement:'Test 1 or Test 3',
+        lede:'The learner actively builds a sentence from meaningful chunks.',
+        prompt:'Build: “Why do you want to travel to Beijing?”',
+        tokens:['去北京旅游','你','为什么','想'], answer:['你','为什么','想','去北京旅游'],
+        explanation:'Use subject + 为什么 + 想 + action: 你为什么想去北京旅游？',
+        measures:'Active control of sentence order.', response:'Tap-to-order phrase chunks.',
+        rule:'Use chunks rather than single characters so the task measures grammar, not puzzle-solving.'
+      },
+      {
+        id:'guided-production', title:'Guided written production', skill:'Production', format:'Input', placement:'Test 3 · Mastery',
+        lede:'The learner produces the target sentence without visible answer choices.',
+        prompt:'Write in Chinese: “Why do you want to go to Beijing?”', placeholder:'Type your answer in Hanzi',
+        answer:'你为什么想去北京', accepted:['你为什么想去北京','你为什么想去北京？','你为什么想去北京?'],
+        explanation:'A natural answer is 你为什么想去北京？',
+        measures:'Independent written use of chapter vocabulary and grammar.', response:'Typed Hanzi with normalized punctuation.',
+        rule:'Accept equivalent punctuation and explicitly authored valid variants.'
+      }
+    ];
+
+    const state = { index:0, answers:new Map(), checked:new Set(), revealed:new Set(), playCounts:new Map(), loadingAudio:null };
+    const audioCache = new Map();
+    let activeAudio = null;
+
+    const $ = id => document.getElementById(id);
+    const escapeHtml = value => String(value ?? '').replace(/[&<>'"]/g, character => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[character]));
+    const normalize = value => String(value ?? '').trim().replace(/[\s。！？!?，,]/g,'').toLowerCase();
+    const current = () => QUESTIONS[state.index];
+
+    function answerText(question){
+      return Array.isArray(question.answer) ? question.answer.join(' → ') : question.answer;
+    }
+    function isCorrect(question,response){
+      if(question.format === 'Order') return Array.isArray(response) && response.join('|') === question.answer.join('|');
+      if(question.format === 'Input') return (question.accepted || [question.answer]).some(answer => normalize(answer) === normalize(response));
+      return response === question.answer;
+    }
+    function hasResponse(question){
+      const response = state.answers.get(question.id);
+      return Array.isArray(response) ? response.length > 0 : Boolean(String(response ?? '').trim());
+    }
+
+    function renderCatalog(){
+      $('typeList').innerHTML = QUESTIONS.map((question,index) => `
+        <button class="type-button ${index===state.index?'is-active':''}" data-index="${index}">
+          <span class="type-number">${String(index+1).padStart(2,'0')}</span>
+          <span><span class="type-name">${escapeHtml(question.title)}</span><span class="type-skill">${escapeHtml(question.skill)}</span></span>
+          <span class="type-format">${escapeHtml(question.format)}</span>
+        </button>`).join('');
+    }
+
+    function renderResponse(question,checked,response){
+      if(question.format === 'Choice'){
+        return `<div class="option-list">${question.options.map((option,index) => {
+          const selected = response === option;
+          const correct = checked && option === question.answer;
+          const wrong = checked && selected && option !== question.answer;
+          return `<button class="option ${selected?'is-selected':''} ${correct?'is-correct':''} ${wrong?'is-wrong':''}" data-option="${index}" ${checked?'disabled':''}>
+            <span class="option-letter">${String.fromCharCode(65+index)}</span><span>${escapeHtml(option)}</span>
+          </button>`;
+        }).join('')}</div>`;
+      }
+      if(question.format === 'Picture'){
+        return `<div class="picture-grid">${question.options.map((option,index) => {
+          const selected = response === option.value;
+          const correct = checked && option.value === question.answer;
+          const wrong = checked && selected && option.value !== question.answer;
+          return `<button class="picture-option ${selected?'is-selected':''} ${correct?'is-correct':''} ${wrong?'is-wrong':''}" data-picture="${index}" ${checked?'disabled':''}>
+            <span class="picture-emoji">${escapeHtml(option.emoji)}</span><span class="picture-caption">${escapeHtml(option.label)}</span>
+          </button>`;
+        }).join('')}</div>`;
+      }
+      if(question.format === 'ErrorSpot'){
+        return `<div class="error-sentence">${question.segments.map((segment,index) => {
+          const selected = response === segment;
+          const correct = checked && segment === question.answer;
+          const wrong = checked && selected && segment !== question.answer;
+          return `<button class="error-word ${selected?'is-selected':''} ${correct?'is-correct':''} ${wrong?'is-wrong':''}" data-segment="${index}" ${checked?'disabled':''}>${escapeHtml(segment)}</button>`;
+        }).join('')}</div>`;
+      }
+      if(question.format === 'Input'){
+        return `<label class="input-label" for="answerInput">Your answer</label><input class="answer-input" id="answerInput" value="${escapeHtml(response || '')}" placeholder="${escapeHtml(question.placeholder || 'Type your answer')}" ${checked?'disabled':''}>`;
+      }
+      const ordered = Array.isArray(response) ? response : [];
+      return `<div class="order-answer">${ordered.length ? ordered.map((token,index) => `<button class="token is-answer" data-remove-token="${index}" ${checked?'disabled':''}>${escapeHtml(token)}</button>`).join('') : '<span class="order-placeholder">Your sentence will appear here</span>'}</div>
+        <div class="token-bank">${question.tokens.map((token,index) => {
+          const used = ordered.includes(token);
+          return `<button class="token ${used?'is-used':''}" data-token="${index}" ${checked||used?'disabled':''}>${escapeHtml(token)}</button>`;
+        }).join('')}</div>`;
+    }
+
+    function renderQuestion(){
+      const question = current();
+      const response = state.answers.get(question.id);
+      const checked = state.checked.has(question.id);
+      const revealed = state.revealed.has(question.id);
+      const correct = checked && !revealed && isCorrect(question,response);
+      const plays = state.playCounts.get(question.id) || 0;
+
+      $('progressName').textContent = question.title;
+      $('progressCount').textContent = `${state.index+1} / ${QUESTIONS.length}`;
+      $('progressFill').style.width = `${(state.index+1)/QUESTIONS.length*100}%`;
+      $('questionEyebrow').textContent = `${question.skill} · ${question.format}`;
+      $('questionTitle').textContent = question.title;
+      $('questionLede').textContent = question.lede;
+      $('noteMeasures').textContent = question.measures;
+      $('noteResponse').textContent = question.response;
+      $('notePlacement').textContent = question.placement;
+      $('noteRule').textContent = question.rule;
+      $('answerKey').innerHTML = `<b>${escapeHtml(answerText(question))}</b><p>${escapeHtml(question.explanation)}</p>`;
+
+      const audio = question.audio ? `<div class="audio-panel">
+        <button class="audio-button" id="audioButton" aria-label="Play Mandarin audio" ${state.loadingAudio===question.id?'disabled':''}>${state.loadingAudio===question.id?'…':'▶'}</button>
+        <div class="audio-copy"><b>${state.loadingAudio===question.id?'Generating audio…':'Play Mandarin audio'}</b><span>Alibaba TTS · ${plays} play${plays===1?'':'s'}${checked?' · transcript available below':''}</span></div>
+      </div>` : '';
+      const feedbackClass = revealed ? 'is-revealed' : (correct ? 'is-correct' : 'is-wrong');
+      const feedbackLabel = revealed ? 'Answer revealed' : (correct ? 'Correct' : 'Not quite');
+      const feedback = checked ? `<div class="feedback ${feedbackClass}">
+        <b>${feedbackLabel} · ${escapeHtml(answerText(question))}</b>
+        <p>${escapeHtml(question.explanation)}</p>
+        ${question.transcript ? `<div class="transcript"><span>Transcript</span><p>${escapeHtml(question.transcript)}</p></div>` : ''}
+      </div>` : '';
+
+      $('questionCard').innerHTML = `
+        <div class="question-meta"><span class="pill is-skill">${escapeHtml(question.skill)}</span><span class="pill">${escapeHtml(question.format)}</span><span class="pill">HSK 2 · Chapter 1</span></div>
+        ${question.passage ? `<div class="reading-passage">${escapeHtml(question.passage)}</div>` : ''}
+        <h3 class="question-prompt">${escapeHtml(question.prompt)}</h3>
+        ${question.context ? `<div class="question-context">${escapeHtml(question.context)}</div>` : ''}
+        ${audio}
+        <div class="response-area">${renderResponse(question,checked,response)}</div>
+        ${feedback}
+        <div class="question-actions">
+          <button class="action" id="resetButton">Reset</button>
+          <button class="action" id="revealButton">Reveal answer</button>
+          <button class="action primary" id="checkButton" ${!hasResponse(question)||checked?'disabled':''}>Check answer</button>
+        </div>`;
+
+      $('previousButton').disabled = state.index === 0;
+      $('nextButton').disabled = state.index === QUESTIONS.length - 1;
+      renderCatalog();
+      bindQuestionEvents();
+    }
+
+    function bindQuestionEvents(){
+      const question = current();
+      $('questionCard').querySelectorAll('[data-option]').forEach(button => button.addEventListener('click',() => {
+        state.answers.set(question.id,question.options[Number(button.dataset.option)]);
+        renderQuestion();
+      }));
+      $('questionCard').querySelectorAll('[data-picture]').forEach(button => button.addEventListener('click',() => {
+        state.answers.set(question.id,question.options[Number(button.dataset.picture)].value);
+        renderQuestion();
+      }));
+      $('questionCard').querySelectorAll('[data-segment]').forEach(button => button.addEventListener('click',() => {
+        state.answers.set(question.id,question.segments[Number(button.dataset.segment)]);
+        renderQuestion();
+      }));
+      const input = $('answerInput');
+      if(input){
+        input.addEventListener('input',event => {
+          state.answers.set(question.id,event.target.value);
+          $('checkButton').disabled = !event.target.value.trim();
+        });
+        input.addEventListener('keydown',event => { if(event.key==='Enter' && event.target.value.trim()) checkCurrent(); });
+      }
+      $('questionCard').querySelectorAll('[data-token]').forEach(button => button.addEventListener('click',() => {
+        const ordered = [...(state.answers.get(question.id) || [])];
+        ordered.push(question.tokens[Number(button.dataset.token)]);
+        state.answers.set(question.id,ordered);
+        renderQuestion();
+      }));
+      $('questionCard').querySelectorAll('[data-remove-token]').forEach(button => button.addEventListener('click',() => {
+        const ordered = [...(state.answers.get(question.id) || [])];
+        ordered.splice(Number(button.dataset.removeToken),1);
+        state.answers.set(question.id,ordered);
+        renderQuestion();
+      }));
+      $('resetButton').addEventListener('click',resetCurrent);
+      $('revealButton').addEventListener('click',revealCurrent);
+      $('checkButton').addEventListener('click',checkCurrent);
+      $('audioButton')?.addEventListener('click',playCurrentAudio);
+    }
+
+    function checkCurrent(){
+      const question = current();
+      if(!hasResponse(question)) return;
+      state.checked.add(question.id);
+      renderQuestion();
+    }
+    function resetCurrent(){
+      const question = current();
+      state.answers.delete(question.id);
+      state.checked.delete(question.id);
+      state.revealed.delete(question.id);
+      renderQuestion();
+    }
+    function revealCurrent(){
+      const question = current();
+      state.answers.set(question.id,Array.isArray(question.answer)?[...question.answer]:question.answer);
+      state.checked.add(question.id);
+      state.revealed.add(question.id);
+      renderQuestion();
+    }
+    function goTo(index){
+      if(index<0 || index>=QUESTIONS.length) return;
+      activeAudio?.pause();
+      state.index=index;
+      renderQuestion();
+      document.querySelector('.stage')?.scrollTo({top:0,behavior:'smooth'});
+    }
+
+    async function playCurrentAudio(){
+      const question=current();
+      if(!question.audio) return;
+      activeAudio?.pause();
+      state.loadingAudio=question.id;
+      renderQuestion();
+      try{
+        let url=audioCache.get(question.audio);
+        if(!url){
+          const response=await fetch('/api/tts',{
+            method:'POST',headers:{'Content-Type':'application/json'},
+            body:JSON.stringify({provider:'alibaba',text:question.audio})
+          });
+          if(!response.ok){
+            const data=await response.json().catch(()=>({}));
+            throw new Error(data.error || `Audio request failed (${response.status})`);
+          }
+          url=URL.createObjectURL(await response.blob());
+          audioCache.set(question.audio,url);
+        }
+        state.playCounts.set(question.id,(state.playCounts.get(question.id)||0)+1);
+        activeAudio=new Audio(url);
+        activeAudio.playbackRate=.9;
+        await activeAudio.play();
+      }catch(error){
+        alert(`Could not play audio: ${error.message}`);
+      }finally{
+        state.loadingAudio=null;
+        renderQuestion();
+      }
+    }
+
+    async function checkServer(){
+      const status=$('serverStatus');
+      try{
+        const response=await fetch('/api/status',{cache:'no-store'});
+        const data=await response.json();
+        if(!response.ok || !data.alibaba) throw new Error();
+        status.className='server-status is-ready';
+        status.innerHTML='<i class="server-dot"></i><span>Alibaba audio ready</span>';
+      }catch(_){
+        status.className='server-status is-error';
+        status.innerHTML='<i class="server-dot"></i><span>Audio unavailable</span>';
+      }
+    }
+
+    $('typeList').addEventListener('click',event => {
+      const button=event.target.closest('[data-index]');
+      if(button) goTo(Number(button.dataset.index));
+    });
+    $('previousButton').addEventListener('click',()=>goTo(state.index-1));
+    $('nextButton').addEventListener('click',()=>goTo(state.index+1));
+    window.addEventListener('keydown',event => {
+      if(event.target.matches('input')) return;
+      if(event.key==='ArrowLeft') goTo(state.index-1);
+      if(event.key==='ArrowRight') goTo(state.index+1);
+    });
+
+    renderQuestion();
+    checkServer();
+  </script>
+</body>
+</html>

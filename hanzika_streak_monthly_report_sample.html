@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hanzika · Streak and monthly report concept</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@600;700;800;900&amp;family=Noto+Sans+SC:wght@700;900&amp;display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#f3f3f5; --surface:#fff; --soft:#f7f7f8; --border:#e4e4e7; --border-2:#d2d2d7;
+    --text:#3f3f46; --muted:#71717a; --faint:#a1a1aa;
+    --pink:#ff4b91; --pink-dark:#d93678; --pink-bg:#fff0f6;
+    --green:#58cc02; --green-dark:#46a302; --green-bg:#d7ffb8;
+    --blue:#1cb0f6; --blue-dark:#168bc2; --blue-bg:#ddf4ff;
+    --purple:#a85cf4; --purple-dark:#8135c9; --purple-bg:#f2e6ff;
+    --orange:#ff9600; --orange-dark:#d76f00; --orange-bg:#ffead1;
+    --red:#ff4b4b; --red-dark:#b23a3a; --red-bg:#ffdfe0;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:'Nunito',system-ui,sans-serif}
+  button{font:inherit}
+  .sample-banner{background:#29292f;color:#fff;padding:10px 22px;text-align:center;font-size:12px;font-weight:800;letter-spacing:.02em}
+  .sample-banner b{color:#ff83b3}
+  .shell{display:grid;grid-template-columns:220px minmax(0,1fr);min-height:100vh}
+  .sidebar{position:sticky;top:0;height:100vh;background:#fff;border-right:2px solid var(--border);padding:26px 16px;display:flex;flex-direction:column}
+  .brand{display:flex;align-items:baseline;gap:8px;padding:0 10px 26px}.brand-zh{font-family:'Noto Sans SC';font-size:23px;font-weight:900;color:var(--pink)}.brand-en{font-size:10px;font-weight:900;letter-spacing:.14em;color:var(--faint);text-transform:uppercase}
+  .nav-label{padding:0 12px 8px;color:var(--faint);font-size:10px;font-weight:900;letter-spacing:.1em;text-transform:uppercase}
+  .nav{display:flex;align-items:center;gap:11px;padding:11px 12px;border:2px solid transparent;border-radius:13px;color:var(--muted);font-size:12px;font-weight:900;letter-spacing:.05em;text-transform:uppercase}.nav.is-active{background:var(--pink-bg);border-color:var(--pink);color:var(--pink-dark)}
+  .nav-icon{width:26px;height:26px;border-radius:8px;display:grid;place-items:center;background:#fff;font-size:13px}
+  .sidebar-note{margin-top:auto;padding:13px;border:2px solid var(--border);border-radius:14px;background:var(--soft);font-size:11px;font-weight:700;line-height:1.45;color:var(--muted)}
+  .sidebar-note b{display:block;color:var(--text);margin-bottom:3px}
+  main{width:min(1180px,100%);padding:38px clamp(22px,4vw,52px) 80px}
+  .page-head{display:flex;justify-content:space-between;gap:20px;align-items:flex-start;margin-bottom:24px}
+  h1{margin:0;font-size:28px;font-weight:900}.subtitle{margin:5px 0 0;color:var(--muted);font-size:14px;font-weight:700}
+  .profile-pill{display:flex;gap:10px;align-items:center;padding:8px 13px 8px 8px;border:2px solid var(--border);border-radius:15px;background:#fff;font-size:12px;font-weight:900}.avatar{width:32px;height:32px;border-radius:50%;display:grid;place-items:center;background:var(--pink);color:#fff}
+  .panel{background:var(--surface);border:2px solid var(--border);border-radius:22px;padding:24px;margin-top:18px}
+  .panel-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:20px}.panel-kicker{font-size:10px;font-weight:900;letter-spacing:.1em;text-transform:uppercase;color:var(--pink-dark)}.panel h2{font-size:20px;margin:3px 0 0;font-weight:900}.panel-desc{margin-top:4px;color:var(--muted);font-size:12.5px;font-weight:700}
+  .streak-pill,.saved-pill{display:inline-flex;align-items:center;gap:7px;padding:7px 10px;border-radius:999px;font-size:11px;font-weight:900;white-space:nowrap}.streak-pill{background:var(--orange-bg);color:var(--orange-dark)}.saved-pill{background:var(--green-bg);color:var(--green-dark)}
+  .month-control{display:flex;align-items:center;gap:9px}.month-control button{width:34px;height:34px;border:2px solid var(--border);border-radius:10px;background:#fff;color:var(--faint);font-size:18px;font-weight:900}.month-control button:disabled{opacity:.45}.month-label{min-width:116px;text-align:center;font-size:13px;font-weight:900}
+  .legend{display:flex;gap:9px;flex-wrap:wrap;margin-bottom:16px}.legend-item{display:flex;align-items:center;gap:6px;color:var(--muted);font-size:10.5px;font-weight:800}.legend-dot{width:8px;height:8px;border-radius:50%}.is-flash{background:var(--blue)}.is-quiz{background:var(--pink)}.is-hsk{background:var(--purple)}
+  .streak-layout{display:grid;grid-template-columns:minmax(0,1.65fr) minmax(280px,.72fr);gap:20px;align-items:start}
+  .calendar{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:7px}.weekday{text-align:center;padding-bottom:2px;color:var(--faint);font-size:9px;font-weight:900;text-transform:uppercase}
+  .day{position:relative;min-height:91px;padding:9px;border:2px solid var(--border);border-radius:13px;background:var(--soft);color:var(--faint);text-align:left;cursor:pointer;transition:transform .12s,border-color .12s,background .12s}.day:hover{transform:translateY(-2px);border-color:var(--pink)}.day:focus-visible{outline:3px solid var(--pink-bg);border-color:var(--pink)}.day.is-empty{visibility:hidden}.day.is-active{background:#f5fff0;border-color:#b8e998;color:var(--text)}.day.is-heavy{background:var(--green-bg);border-color:var(--green)}.day.is-selected{outline:3px solid var(--pink);outline-offset:2px}.day.is-today .day-number{color:var(--pink-dark)}
+  .day-top{display:flex;justify-content:space-between;align-items:center}.day-number{font-size:11px;font-weight:900}.round-count{padding:2px 5px;border-radius:6px;background:#fff;color:var(--green-dark);font-size:8.5px;font-weight:900}
+  .day-modes{display:flex;gap:4px;margin-top:18px;min-height:16px}.mode-mark{width:18px;height:18px;border:2px solid #fff;border-radius:50%;display:grid;place-items:center;color:#fff;font-size:7px;font-weight:900;box-shadow:0 1px 2px rgba(0,0,0,.08)}.mode-mark+.mode-mark{margin-left:-7px}
+  .day-total{position:absolute;left:9px;right:9px;bottom:8px;color:var(--muted);font-size:9px;font-weight:900}.day-total b{color:var(--text);font-size:11px}
+  .day-detail{border:2px solid var(--border);border-radius:18px;background:var(--soft);overflow:hidden;position:sticky;top:18px}.detail-head{padding:17px 17px 14px;border-bottom:2px solid var(--border);background:#fff}.detail-date{font-size:15px;font-weight:900}.detail-summary{display:flex;gap:12px;margin-top:10px}.detail-summary span{font-size:10px;font-weight:800;color:var(--muted)}.detail-summary b{display:block;color:var(--pink);font-size:17px;line-height:1.1}.detail-list{padding:12px;display:flex;flex-direction:column;gap:9px}.detail-empty{padding:30px 14px;text-align:center;color:var(--faint);font-size:12px;font-weight:800}
+  .round-card{padding:12px;border:2px solid var(--border);border-radius:14px;background:#fff}.round-head{display:flex;gap:9px;align-items:flex-start}.round-icon{width:31px;height:31px;border-radius:9px;display:grid;place-items:center;color:#fff;font-size:9px;font-weight:900;flex:0 0 auto}.round-copy{min-width:0;flex:1}.round-title{font-size:12px;font-weight:900}.round-scope{margin-top:2px;color:var(--muted);font-size:10px;font-weight:700;line-height:1.3}.round-time{color:var(--faint);font-size:9px;font-weight:900}.metrics{display:flex;gap:5px;flex-wrap:wrap;margin-top:10px}.metric{padding:4px 7px;border-radius:99px;background:var(--soft);color:var(--muted);font-size:9px;font-weight:900}.metric.accuracy{background:var(--green-bg);color:var(--green-dark)}
+  .concept-note{display:flex;gap:10px;align-items:flex-start;margin-top:16px;padding:12px 14px;border-radius:14px;background:var(--blue-bg);color:var(--blue-dark);font-size:11px;font-weight:800;line-height:1.45}.info-icon{width:20px;height:20px;flex:0 0 20px;border-radius:50%;display:grid;place-items:center;background:var(--blue);color:#fff}
+  .report-head{align-items:center}.report-actions{display:flex;gap:9px;align-items:center}
+  .kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}.kpi{padding:16px;border:2px solid var(--border);border-radius:16px;background:var(--soft)}.kpi-label{font-size:9px;font-weight:900;letter-spacing:.06em;text-transform:uppercase;color:var(--faint)}.kpi-value{margin-top:5px;font-size:26px;font-weight:900}.kpi-note{margin-top:1px;color:var(--muted);font-size:10px;font-weight:800}.kpi:nth-child(1) .kpi-value{color:var(--orange-dark)}.kpi:nth-child(2) .kpi-value{color:var(--pink)}.kpi:nth-child(3) .kpi-value{color:var(--blue-dark)}.kpi:nth-child(4) .kpi-value{color:var(--green-dark)}
+  .report-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:14px}.report-card{padding:18px;border:2px solid var(--border);border-radius:18px}.card-title{font-size:12px;font-weight:900;text-transform:uppercase;letter-spacing:.05em}.card-subtitle{margin-top:3px;color:var(--faint);font-size:10.5px;font-weight:700}.mode-row{display:grid;grid-template-columns:86px 1fr 65px;gap:9px;align-items:center;margin-top:14px}.mode-name{display:flex;align-items:center;gap:7px;font-size:10.5px;font-weight:900}.tiny-dot{width:8px;height:8px;border-radius:50%}.bar{height:9px;border-radius:99px;background:var(--soft);overflow:hidden}.bar-fill{height:100%;border-radius:inherit}.mode-value{text-align:right;color:var(--muted);font-size:9.5px;font-weight:900}.mode-value b{color:var(--text);font-size:11px}
+  .week-chart{display:flex;gap:10px;padding-top:18px}.week-col{flex:1;display:flex;flex-direction:column;align-items:center;gap:6px}.week-value{font-size:9px;font-weight:900;color:var(--muted)}.week-value.is-empty{color:var(--faint);font-weight:800}.week-bar-track{height:92px;width:100%;display:flex;align-items:flex-end;justify-content:center;border-bottom:2px solid var(--border)}.week-empty{width:14px;height:4px;border-radius:99px;background:var(--border-2)}.week-label{font-size:8.5px;font-weight:900;color:var(--faint)}
+  .insights{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:14px}.insight{padding:11px;border-radius:13px;background:var(--soft)}.insight-icon{font-size:18px}.insight b{display:block;margin-top:5px;font-size:12px}.insight span{display:block;margin-top:2px;color:var(--muted);font-size:9.5px;font-weight:800;line-height:1.3}
+  .history{margin-top:14px;border:2px solid var(--border);border-radius:18px;overflow:hidden}.history-head{display:flex;justify-content:space-between;gap:15px;align-items:center;padding:16px 18px;border-bottom:2px solid var(--border)}.filters{display:flex;gap:5px;flex-wrap:wrap}.filter{border:2px solid var(--border);border-radius:99px;background:#fff;padding:5px 9px;color:var(--muted);font-size:9px;font-weight:900;cursor:pointer}.filter.is-active{border-color:var(--pink);background:var(--pink-bg);color:var(--pink-dark)}
+  .history-table{width:100%;border-collapse:collapse}.history-table th{text-align:left;padding:9px 14px;background:var(--soft);color:var(--faint);font-size:8px;font-weight:900;letter-spacing:.07em;text-transform:uppercase}.history-table td{padding:12px 14px;border-top:1px solid var(--border);font-size:10.5px;font-weight:800;vertical-align:middle}.history-table tbody tr:first-child td{border-top:0}.activity-kind{display:flex;align-items:center;gap:8px}.kind-icon{width:27px;height:27px;border-radius:8px;color:#fff;display:grid;place-items:center;font-size:8px;font-weight:900}.activity-kind b{display:block;font-size:10.5px}.activity-kind small,.scope-small{display:block;color:var(--faint);font-size:9px;font-weight:800;margin-top:1px}.accuracy-text{font-weight:900}.empty-filter{padding:30px;text-align:center;color:var(--faint);font-size:12px;font-weight:800}
+  /* ---- Learner-centered report components ---- */
+  .mastery-bar{display:flex;gap:2px;height:16px;border-radius:99px;overflow:hidden;margin-top:16px;background:var(--soft)}
+  .mastery-seg{height:100%}
+  .mastery-legend{display:flex;flex-wrap:wrap;gap:16px;margin-top:13px}
+  .mastery-key{display:flex;align-items:center;gap:6px;color:var(--muted);font-size:11px;font-weight:800}.mastery-key i{width:9px;height:9px;border-radius:50%}.mastery-key b{color:var(--text)}
+  .mastery-caption{margin-top:13px;padding-top:12px;border-top:1px solid var(--border);color:var(--green-dark);font-size:11.5px;font-weight:800}
+  .skill{margin-top:13px}.skill-top{display:flex;justify-content:space-between;gap:10px;font-size:11px;font-weight:900;margin-bottom:6px}.skill-pct{font-variant-numeric:tabular-nums}
+  .week-legend{display:flex;gap:14px;justify-content:center;margin-top:12px}.week-legend span{display:flex;align-items:center;gap:6px;color:var(--muted);font-size:9.5px;font-weight:800}.week-legend i{width:9px;height:9px;border-radius:3px}
+  .week-stack{width:min(34px,75%);display:flex;flex-direction:column-reverse;border-radius:8px 8px 4px 4px;overflow:hidden}.week-seg{display:block;width:100%}
+  .work-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:6px}
+  .work-col-title{font-size:9.5px;font-weight:900;letter-spacing:.06em;text-transform:uppercase;color:var(--faint);margin-bottom:6px}
+  .weak-row{display:grid;grid-template-columns:1fr auto auto;gap:10px;align-items:center;padding:9px 0;border-top:1px solid var(--border)}
+  .weak-pct{min-width:42px}
+  .weak-name{font-size:11.5px;font-weight:900}.weak-name small{display:block;color:var(--faint);font-size:9px;font-weight:800;margin-top:2px}
+  .weak-pct{text-align:right;font-size:14px;font-weight:900;font-variant-numeric:tabular-nums}
+  .leech-list{display:flex;flex-direction:column;gap:8px}
+  .leech{display:flex;align-items:center;gap:10px;padding:8px 11px;border:2px solid var(--border);border-radius:12px;background:#fff}
+  .leech-hanzi{font-family:'Noto Sans SC',sans-serif;font-size:17px;font-weight:900;flex:0 0 auto}
+  .leech-copy{flex:1;min-width:0}.leech-copy b{font-size:11px;font-weight:900}.leech-copy span{display:block;color:var(--faint);font-size:9.5px;font-weight:800;margin-top:1px}
+  .leech-score{font-size:12px;font-weight:900;font-variant-numeric:tabular-nums}
+  .win-banner{display:flex;gap:10px;align-items:center;margin-top:16px;padding:13px 15px;border-radius:14px;font-size:11.5px;font-weight:800;line-height:1.4}
+  .win-banner.is-good{background:var(--green-bg);color:var(--green-dark)}
+  .win-banner.is-okay{background:var(--orange-bg);color:var(--orange-dark)}
+  .win-banner.is-reset{background:var(--red-bg);color:var(--red-dark)}
+  /* ---- Mock: goal strip, KPI deltas, calibration, action buttons ---- */
+  .goal-strip{margin:2px 0 18px;padding:15px 18px;border:2px solid var(--border);border-radius:16px;background:var(--soft)}
+  .goal-top{display:flex;justify-content:space-between;align-items:baseline;gap:12px;margin-bottom:9px}
+  .goal-label{font-size:12px;font-weight:900}.goal-count{font-size:11px;font-weight:800;color:var(--muted)}.goal-count b{color:var(--green-dark);font-size:14px}
+  .goal-track{height:12px;border-radius:99px;background:var(--border);overflow:hidden}.goal-fill{display:block;height:100%;border-radius:inherit;background:linear-gradient(90deg,var(--green),#7bd63f)}
+  .goal-note{margin-top:9px;font-size:11px;font-weight:800;color:var(--muted)}.goal-note b{color:var(--text)}
+  .kpi-delta{display:block;margin-top:5px;font-size:9.5px;font-weight:900}
+  .kpi-delta.is-up{color:var(--green-dark)}.kpi-delta.is-down{color:var(--red)}.kpi-delta.is-flat{color:var(--faint)}
+  .cal-row{display:flex;gap:22px;align-items:center;margin-top:6px;flex-wrap:wrap}
+  .cal-figure{flex:0 0 auto;text-align:center;min-width:150px}.cal-pct{font-size:40px;font-weight:900;line-height:1}.cal-sub{margin:6px auto 0;color:var(--muted);font-size:10.5px;font-weight:800;max-width:170px;line-height:1.35}
+  .cal-detail{flex:1;min-width:230px}
+  .cal-bar{display:flex;height:14px;border-radius:99px;overflow:hidden;background:var(--soft);gap:2px}.cal-bar i{display:block}
+  .cal-legend{display:flex;gap:16px;margin-top:10px}.cal-legend span{display:flex;align-items:center;gap:6px;font-size:10.5px;font-weight:800;color:var(--muted)}.cal-legend i{width:9px;height:9px;border-radius:50%}
+  .cal-take{margin-top:11px;font-size:11.5px;font-weight:700;color:var(--text);line-height:1.5}.cal-take b{color:var(--red)}
+  .mock-btn{border:2px solid var(--border);background:#fff;color:var(--text);border-radius:11px;padding:8px 13px;font-size:10.5px;font-weight:900;cursor:pointer;transition:transform .1s,border-color .12s;white-space:nowrap}
+  .mock-btn:hover{border-color:var(--pink)}.mock-btn:active{transform:translateY(1px)}
+  .mock-btn-primary{background:var(--pink);border-color:var(--pink);color:#fff}.mock-btn-primary:hover{filter:brightness(1.05);border-color:var(--pink)}
+  .mock-btn-sm{padding:5px 10px;font-size:9.5px}
+  .mock-btn-block{display:block;width:100%;margin-top:14px;padding:13px;font-size:12px}
+  .leech-actions{margin-top:10px}
+  .mock-toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%) translateY(20px);background:#29292f;color:#fff;padding:11px 18px;border-radius:12px;font-size:12px;font-weight:800;opacity:0;pointer-events:none;transition:opacity .2s,transform .2s;z-index:100}.mock-toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+  /* ---- Mobile day-detail modal: tapping a day opens a bottom sheet instead of
+     requiring a scroll down to a stacked panel (and a scroll back up to tap another day). ---- */
+  .day-modal-overlay{position:fixed;inset:0;z-index:60;display:flex;align-items:flex-end;justify-content:center;background:rgba(24,24,27,.45);opacity:0;pointer-events:none;transition:opacity .2s}
+  .day-modal-overlay.is-open{opacity:1;pointer-events:auto}
+  .day-modal{width:100%;max-width:480px;max-height:82vh;overflow-y:auto;background:#fff;border-radius:22px 22px 0 0;padding:10px 18px 26px;position:relative;transform:translateY(28px);transition:transform .24s cubic-bezier(.2,.8,.2,1);box-shadow:0 -12px 40px rgba(0,0,0,.18)}
+  .day-modal-overlay.is-open .day-modal{transform:translateY(0)}
+  .day-modal-handle{width:36px;height:4px;border-radius:99px;background:var(--border-2);margin:2px auto 12px}
+  .day-modal-close{position:absolute;top:12px;right:14px;width:30px;height:30px;border:0;border-radius:50%;background:var(--soft);color:var(--muted);font-size:17px;line-height:1;display:grid;place-items:center;cursor:pointer}
+  @media(min-width:981px){.day-modal-overlay{display:none}}
+  @media(max-width:980px){.shell{grid-template-columns:1fr}.sidebar{display:none}main{margin:auto}.streak-layout{grid-template-columns:1fr}.day-detail{display:none}.kpis{grid-template-columns:repeat(2,1fr)}.work-grid{grid-template-columns:1fr}}
+  @media(max-width:680px){main{padding:24px 12px 60px}.page-head{align-items:center}.panel{padding:16px;border-radius:18px}.streak-layout{gap:13px}.calendar{gap:5px}
+    /* Calendar cells simplify to number + a row of small dots — the modal (tap) now
+       carries the rounds/items/breakdown detail, so the cell doesn't need to cram it too. */
+    .day{min-height:50px;padding:4px;border-radius:12px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px}
+    .day-top{justify-content:center}.round-count{display:none}
+    .day-modes{margin-top:0;min-height:0;justify-content:center}
+    .mode-mark{width:7px;height:7px;border:0;font-size:0;box-shadow:none}.mode-mark+.mode-mark{margin-left:3px}
+    .day-total{display:none}
+  .report-grid{grid-template-columns:1fr}.kpis{grid-template-columns:1fr 1fr}.history{overflow-x:auto}.history-table{min-width:670px}.profile-pill{display:none}.panel-head{flex-direction:column}.report-head{align-items:flex-start}}
+</style>
+</head>
+<body>
+<div class="sample-banner"><b>Interactive design sample</b> · Proposed profile experience using sample July 2026 data</div>
+<div class="shell">
+  <aside class="sidebar">
+    <div class="brand"><span class="brand-zh">汉字卡</span><span class="brand-en">Hanzika</span></div>
+    <div class="nav-label">Menu</div>
+    <div class="nav is-active"><span class="nav-icon">人</span>Profile</div>
+    <div class="nav"><span class="nav-icon">词</span>Vocabulary</div>
+    <div class="nav"><span class="nav-icon">卡</span>Study</div>
+    <div class="nav"><span class="nav-icon">考</span>HSK Study</div>
+    <div class="sidebar-note"><b>Why this lives in Profile</b>The calendar is for daily recall. The monthly report turns the same saved activity into a longer-term learning overview.</div>
+  </aside>
+  <main>
+    <header class="page-head">
+      <div><h1>Profile</h1><p class="subtitle">Your learning progress at a glance.</p></div>
+      <div class="profile-pill"><span class="avatar">I</span>Ilham</div>
+    </header>
+
+    <section class="panel">
+      <div class="panel-head">
+        <div><div class="panel-kicker">Daily activity</div><h2>Study streak</h2><p class="panel-desc">See what you practised—not just whether you showed up.</p></div>
+        <div class="report-actions"><span class="streak-pill">🔥 2 day streak</span><div class="month-control"><button disabled aria-label="Previous month">‹</button><span class="month-label">July 2026</span><button disabled aria-label="Next month">›</button></div></div>
+      </div>
+      <div class="legend"><span class="legend-item"><i class="legend-dot is-flash"></i>Flashcards</span><span class="legend-item"><i class="legend-dot is-quiz"></i>Quiz</span><span class="legend-item"><i class="legend-dot is-hsk"></i>HSK practice or test</span></div>
+      <div class="streak-layout">
+        <div><div class="calendar" id="calendar"></div><div class="concept-note"><span class="info-icon">i</span><span>Each completed day shows rounds, total items, and study-type markers. Stronger green means more activity. Older rounds whose details were never captured will stay labelled “Earlier activity”; every new round can show its exact exercise and result.</span></div></div>
+        <aside class="day-detail" id="dayDetail" aria-live="polite"></aside>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head report-head">
+        <div><div class="panel-kicker">Saved on your profile</div><h2>July learning report</h2><p class="panel-desc">Not how much you did — what you actually know, what's slipping, and what to practise next.</p></div>
+        <span class="saved-pill">✓ Report up to date</span>
+      </div>
+      <div class="goal-strip" id="goalStrip"></div>
+      <div class="kpis" id="kpis"></div>
+      <div class="report-grid">
+        <article class="report-card" style="grid-column:1/-1"><div class="card-title">What you know now</div><div class="card-subtitle">Your vocabulary by memory strength — the real progress signal, not items practised</div><div id="masteryBar"></div></article>
+        <article class="report-card"><div class="card-title">Accuracy by skill</div><div class="card-subtitle">One overall % hides your weak spot — here it is broken out</div><div id="skillBreakdown"></div></article>
+        <article class="report-card"><div class="card-title">Weekly rhythm</div><div class="card-subtitle">New words vs. review — advancing or just maintaining?</div><div class="week-chart" id="weekChart"></div><div class="week-legend"><span><i style="background:var(--green)"></i>New</span><span><i style="background:var(--border-2)"></i>Review</span></div></article>
+        <article class="report-card" style="grid-column:1/-1"><div class="card-title">Do you really know it?</div><div class="card-subtitle">When you tapped “I know it” on a flashcard — were you actually right?</div><div id="calibration"></div></article>
+        <article class="report-card" style="grid-column:1/-1"><div class="card-title">Work on next</div><div class="card-subtitle">The few things that would move your understanding most — not vanity stats</div><div id="workNext"></div></article>
+      </div>
+      <div class="history">
+        <div class="history-head"><div><div class="card-title">All completed exercises</div><div class="card-subtitle">Every round saved with its type, scope, result, and date</div></div><div class="filters" id="filters"><button class="filter is-active" data-filter="all">All</button><button class="filter" data-filter="flash">Flashcards</button><button class="filter" data-filter="quiz">Quiz</button><button class="filter" data-filter="hsk">HSK</button></div></div>
+        <div id="historyBody"></div>
+      </div>
+    </section>
+  </main>
+</div>
+<div class="day-modal-overlay" id="dayModalOverlay" hidden>
+  <div class="day-modal" role="dialog" aria-modal="true" aria-labelledby="dayModalTitle">
+    <div class="day-modal-handle"></div>
+    <button class="day-modal-close" id="dayModalClose" aria-label="Close">×</button>
+    <div id="dayModalContent"></div>
+  </div>
+</div>
+<script>
+const activity = {
+  2:[{type:'flash',label:'Flashcards',scope:'HSK 1 · Everyday words',items:20,correct:17,time:'7:40 PM'}],
+  5:[{type:'quiz',label:'Recall quiz',scope:'HSK 1 · Food & dining',items:15,correct:12,time:'8:05 AM'},{type:'flash',label:'Flashcards',scope:'Due for review',items:20,correct:16,time:'8:18 AM'}],
+  8:[{type:'hsk',label:'HSK test',scope:'HSK 2 · Chapters 1–5',items:20,correct:17,time:'6:32 PM'}],
+  12:[{type:'quiz',label:'Recall quiz',scope:'My words · All topics',items:25,correct:23,time:'9:14 AM'}],
+  15:[{type:'hsk',label:'HSK practice',scope:'HSK 2 · Chapter 8',items:20,correct:16,time:'7:03 PM'},{type:'flash',label:'Flashcards',scope:'HSK 2 · Due today',items:25,correct:21,time:'7:22 PM'}],
+  18:[{type:'flash',label:'Flashcards',scope:'HSK 1 · People & family',items:30,correct:25,time:'10:08 AM'}],
+  21:[{type:'quiz',label:'Recall quiz',scope:'Recently added words',items:15,correct:14,time:'8:11 PM'},{type:'hsk',label:'HSK practice',scope:'HSK 2 · Chapter 9',items:15,correct:13,time:'8:24 PM'}],
+  22:[{type:'flash',label:'Flashcards',scope:'HSK 1 · Food & dining',items:30,correct:24,time:'9:10 AM'},{type:'hsk',label:'HSK practice',scope:'HSK 2 · Chapter 10',items:30,correct:26,time:'9:34 AM'}],
+};
+const meta={flash:{short:'卡',color:'var(--blue)',name:'Flashcards'},quiz:{short:'Q',color:'var(--pink)',name:'Quiz'},hsk:{short:'考',color:'var(--purple)',name:'HSK'}};
+
+// ---- Learning-state sample data (what a learner actually needs) ----
+// Vocabulary by memory strength (Leitner box → status). This is knowledge, not activity.
+const vocab={new:41,learning:33,young:28,mastered:63};
+const vocabTotal=vocab.new+vocab.learning+vocab.young+vocab.mastered;
+const masteredThisMonth=23;                          // words that reached full strength in July
+const retention={seen:96,correct:75};                // recall on words reviewed after a delay (did it stick?)
+const slipping=14;                                   // words now due / overdue for review
+const skills=[
+  {name:'Recognition (hanzi → meaning)',seen:120,correct:110},
+  {name:'Reading',seen:34,correct:29},
+  {name:'Listening',seen:40,correct:33},
+  {name:'Production (meaning → hanzi)',seen:64,correct:44},
+  {name:'Tones & pinyin',seen:52,correct:31},
+].map(s=>({...s,pct:Math.round(s.correct/s.seen*100)}));
+const weakestSkill=[...skills].sort((a,b)=>a.pct-b.pct)[0];
+const chapters=[
+  {name:'HSK 2 · Ch.8 — Health',seen:45,correct:29},
+  {name:'HSK 2 · Ch.9 — Travel',seen:33,correct:22},
+  {name:'HSK 2 · Ch.10 — Weather',seen:60,correct:50},
+  {name:'HSK 1 · Food & dining',seen:50,correct:47},
+].map(c=>({...c,pct:Math.round(c.correct/c.seen*100)}));
+const leeches=[
+  {hanzi:'为什么',pinyin:'wèishénme',meaning:'why',seen:9,correct:3},
+  {hanzi:'介绍',pinyin:'jièshào',meaning:'to introduce',seen:7,correct:2},
+  {hanzi:'觉得',pinyin:'juéde',meaning:'to feel / think',seen:10,correct:4},
+];
+const weeksNR=[{n:20,r:35},{n:15,r:30},{n:40,r:65},{n:25,r:35},{n:0,r:0}]; // new vs review items per week
+const tone=pct=>pct>=85?'var(--green-dark)':pct>=70?'var(--orange-dark)':'var(--red)';
+const toneBar=pct=>pct>=85?'var(--green)':pct>=70?'var(--orange)':'var(--red)';
+
+// --- MOCK additions (brainstorm): trajectory, goal/pace, confidence calibration, one-tap actions ---
+const prev={mastered:18,retention:72,weakestSkill:53,slipping:23};   // last month's values, for deltas
+const goal={label:'HSK 2 vocabulary',solid:vocab.mastered,target:150,perMonth:masteredThisMonth};
+const calibration={claimed:58,correct:47};                            // flashcards you tapped "I know it" on → how many were right
+// Delta badge: colour encodes good/bad (valence), arrow encodes direction. So "fewer slipping" reads green even though it points down.
+function deltaBadge(cur,prevVal,higherBetter,suffix=''){
+  const d=cur-prevVal;
+  if(d===0) return `<span class="kpi-delta is-flat">— no change vs June</span>`;
+  const improved=higherBetter?d>0:d<0;
+  return `<span class="kpi-delta ${improved?'is-up':'is-down'}">${d>0?'↑ +':'↓ '}${d}${suffix} vs June</span>`;
+}
+const weekdays=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+const calendar=document.getElementById('calendar');
+calendar.innerHTML=weekdays.map(day=>`<div class="weekday">${day}</div>`).join('');
+const firstDay=new Date(2026,6,1).getDay();
+for(let i=0;i<firstDay;i++) calendar.insertAdjacentHTML('beforeend','<span class="day is-empty"></span>');
+for(let day=1;day<=31;day++){
+  const rounds=activity[day]||[];
+  const items=rounds.reduce((sum,item)=>sum+item.items,0);
+  const marks=[...new Set(rounds.map(item=>item.type))].map(type=>`<i class="mode-mark" style="background:${meta[type].color}">${meta[type].short}</i>`).join('');
+  const classes=['day',rounds.length?'is-active':'',items>=45?'is-heavy':'',day===22?'is-today':'',day===22?'is-selected':''].filter(Boolean).join(' ');
+  calendar.insertAdjacentHTML('beforeend',`<button class="${classes}" data-day="${day}" aria-label="July ${day}${rounds.length?`, ${rounds.length} rounds, ${items} items`:`, no activity`}"><span class="day-top"><span class="day-number">${day}</span>${rounds.length?`<span class="round-count">${rounds.length}×</span>`:''}</span><span class="day-modes">${marks}</span>${rounds.length?`<span class="day-total"><b>${items}</b> items</span>`:''}</button>`);
+}
+function accuracy(rounds){const items=rounds.reduce((sum,item)=>sum+item.items,0);const correct=rounds.reduce((sum,item)=>sum+item.correct,0);return items?Math.round(correct/items*100):null}
+function roundCard(item){const pct=Math.round(item.correct/item.items*100);return `<article class="round-card"><div class="round-head"><span class="round-icon" style="background:${meta[item.type].color}">${meta[item.type].short}</span><div class="round-copy"><div class="round-title">${item.label}</div><div class="round-scope">${item.scope}</div></div><span class="round-time">${item.time}</span></div><div class="metrics"><span class="metric">${item.items} ${item.type==='hsk'?'questions':'words'}</span><span class="metric">${item.correct} correct</span><span class="metric accuracy">${pct}%</span></div></article>`}
+function dayDetailHtml(day){
+  const rounds=activity[day]||[];const items=rounds.reduce((sum,item)=>sum+item.items,0);const pct=accuracy(rounds);
+  const date=new Date(2026,6,day).toLocaleDateString(undefined,{weekday:'long',month:'long',day:'numeric'});
+  return `<div class="detail-head"><div class="detail-date">${date}</div>${rounds.length?`<div class="detail-summary"><span><b>${rounds.length}</b>rounds</span><span><b>${items}</b>items</span><span><b>${pct}%</b>accuracy</span></div>`:''}</div><div class="detail-list">${rounds.length?rounds.map(roundCard).join(''):'<div class="detail-empty">No completed study activity on this date.</div>'}</div>`;
+}
+// Mobile: tapping a day opens a bottom-sheet modal instead of relying on the stacked
+// panel below the calendar — no more scrolling down to see it, then back up to tap another day.
+const dayModalOverlay=document.getElementById('dayModalOverlay');
+const dayModalContent=document.getElementById('dayModalContent');
+const isMobileLayout=()=>window.matchMedia('(max-width:980px)').matches;
+function openDayModal(day){
+  dayModalContent.innerHTML=dayDetailHtml(day);
+  dayModalOverlay.hidden=false;
+  requestAnimationFrame(()=>dayModalOverlay.classList.add('is-open'));
+  document.body.style.overflow='hidden';
+}
+function closeDayModal(){
+  dayModalOverlay.classList.remove('is-open');
+  document.body.style.overflow='';
+  setTimeout(()=>{ if(!dayModalOverlay.classList.contains('is-open')) dayModalOverlay.hidden=true; },240);
+}
+function selectDay(day,{openModal=true}={}){
+  document.querySelectorAll('.day[data-day]').forEach(button=>button.classList.toggle('is-selected',Number(button.dataset.day)===day));
+  document.getElementById('dayDetail').innerHTML=dayDetailHtml(day);
+  if(openModal && isMobileLayout()) openDayModal(day);
+}
+calendar.addEventListener('click',event=>{const button=event.target.closest('[data-day]');if(button)selectDay(Number(button.dataset.day))});
+document.getElementById('dayModalClose').addEventListener('click',closeDayModal);
+dayModalOverlay.addEventListener('click',event=>{if(event.target===dayModalOverlay)closeDayModal();});
+document.addEventListener('keydown',event=>{if(event.key==='Escape' && dayModalOverlay.classList.contains('is-open'))closeDayModal();});
+selectDay(22,{openModal:false});
+
+const rounds=Object.entries(activity).flatMap(([day,items])=>items.map(item=>({...item,day:Number(day)})));
+
+// KPIs — reframed from "how much did I do" to "what do I understand"
+// Colors are data-driven (not assumed-good) so this stays honest at any performance level.
+const retPct=Math.round(retention.correct/retention.seen*100);
+const masteredColor=masteredThisMonth>0?'var(--green-dark)':'var(--faint)';
+const slippingColor=slipping>=40?'var(--red)':'var(--orange-dark)';
+document.getElementById('kpis').innerHTML=[
+  ['Words mastered',(masteredThisMonth>0?'+':'')+masteredThisMonth,'Reached full strength in July',masteredColor,deltaBadge(masteredThisMonth,prev.mastered,true)],
+  ['Retention',retPct+'%',`${retention.correct} of ${retention.seen} recalled after a break`,tone(retPct),deltaBadge(retPct,prev.retention,true,'%')],
+  ['Weakest skill',weakestSkill.pct+'%',weakestSkill.name,'var(--red)',deltaBadge(weakestSkill.pct,prev.weakestSkill,true,'%')],
+  ['Words slipping',slipping,'Due or overdue for review',slippingColor,deltaBadge(slipping,prev.slipping,false)],
+].map(([label,value,note,color,delta])=>`<div class="kpi"><div class="kpi-label">${label}</div><div class="kpi-value" style="color:${color}">${value}</div><div class="kpi-note">${note}</div>${delta}</div>`).join('');
+
+// Goal + pace projection — situates effort against a target (backward-looking → forward-looking)
+const goalPct=Math.round(goal.solid/goal.target*100);
+const remaining=Math.max(0,goal.target-goal.solid);
+const monthsLeft=goal.perMonth>0?Math.ceil(remaining/goal.perMonth):null;
+document.getElementById('goalStrip').innerHTML=
+  `<div class="goal-top"><span class="goal-label">🎯 ${goal.label} goal</span><span class="goal-count"><b>${goal.solid}</b> / ${goal.target} words solid · ${goalPct}%</span></div>`+
+  `<div class="goal-track"><i class="goal-fill" style="width:${goalPct}%"></i></div>`+
+  `<div class="goal-note">${monthsLeft?`At ${goal.perMonth} mastered/month, about <b>${monthsLeft} month${monthsLeft>1?'s':''}</b> to your goal — keep the pace.`:'Master some words this month to project a finish date.'}</div>`;
+
+// Confidence calibration — unique to the commit-first flashcard flow: "you said you knew it — did you?"
+const calPct=Math.round(calibration.correct/calibration.claimed*100);
+const over=calibration.claimed-calibration.correct;
+document.getElementById('calibration').innerHTML=
+  `<div class="cal-row"><div class="cal-figure"><div class="cal-pct" style="color:${tone(calPct)}">${calPct}%</div><div class="cal-sub">of “I know it” cards were actually correct</div></div>`+
+  `<div class="cal-detail"><div class="cal-bar"><i style="width:${calibration.correct/calibration.claimed*100}%;background:var(--green)"></i><i style="width:${over/calibration.claimed*100}%;background:var(--red)"></i></div>`+
+  `<div class="cal-legend"><span><i style="background:var(--green)"></i>You were right · ${calibration.correct}</span><span><i style="background:var(--red)"></i>Overconfident · ${over}</span></div>`+
+  `<p class="cal-take">${over>0?`You were sure of <b>${over} cards you actually missed</b> — your self-rating runs a little ahead of your recall. Those are the highest-value words to re-review.`:`Your self-assessment matches your recall — trust your gut.`}</p>`+
+  `${over>0?`<button class="mock-btn mock-btn-primary" data-mock="Review the ${over} overconfident words">Review the ${over} overconfident words</button>`:''}</div></div>`;
+
+// What you know now — vocabulary by memory strength
+const segs=[['New',vocab.new,'var(--border-2)'],['Learning',vocab.learning,'var(--orange)'],['Young',vocab.young,'var(--blue)'],['Mastered',vocab.mastered,'var(--green)']];
+document.getElementById('masteryBar').innerHTML=
+  `<div class="mastery-bar">${segs.map(([n,v,c])=>`<i class="mastery-seg" style="width:${v/vocabTotal*100}%;background:${c}"></i>`).join('')}</div>`+
+  `<div class="mastery-legend">${segs.map(([n,v,c])=>`<span class="mastery-key"><i style="background:${c}"></i>${n} · <b>${v}</b></span>`).join('')}</div>`+
+  `<div class="mastery-caption">↑ ${masteredThisMonth} words reached “Mastered” this month · ${vocab.mastered} of ${vocabTotal} words now solid</div>`;
+
+// Accuracy by skill — weakest first (most actionable), traffic-light coloured
+document.getElementById('skillBreakdown').innerHTML=[...skills].sort((a,b)=>a.pct-b.pct).map(s=>`<div class="skill"><div class="skill-top"><span>${s.name}</span><span class="skill-pct" style="color:${tone(s.pct)}">${s.pct}%</span></div><div class="bar"><i class="bar-fill" style="display:block;width:${s.pct}%;background:${toneBar(s.pct)}"></i></div></div>`).join('');
+
+// Weekly rhythm — new vs review, stacked
+// Every column shares one baseline (.week-bar-track); a zero week gets an explicit
+// flat marker instead of a fully-transparent sliver, so "no activity" reads as
+// intentional rather than a rendering glitch.
+const weekTotals=weeksNR.map(w=>w.n+w.r);const maxW=Math.max(...weekTotals,1);
+document.getElementById('weekChart').innerHTML=weeksNR.map((w,i)=>{
+  const t=w.n+w.r;
+  const bar=t
+    ? (()=>{const h=Math.max(6,t/maxW*92);const nh=w.n/t*h;const rh=w.r/t*h;return `<div class="week-stack" style="height:${h}px"><i class="week-seg" style="height:${rh}px;background:var(--border-2)"></i><i class="week-seg" style="height:${nh}px;background:var(--green)"></i></div>`;})()
+    : `<div class="week-empty" title="No activity this week"></div>`;
+  return `<div class="week-col"><span class="week-value${t?'':' is-empty'}">${t}</span><div class="week-bar-track">${bar}</div><span class="week-label">W${i+1}</span></div>`;
+}).join('');
+
+// Work on next — weakest chapters + skill + leech words, then an honest closing note
+// The closing note is tiered by how good the best skill actually is — never claims a "win" that isn't real.
+const weakChapters=[...chapters].filter(c=>c.seen>=20).sort((a,b)=>a.pct-b.pct).slice(0,2);
+const bestSkill=[...skills].sort((a,b)=>b.pct-a.pct)[0];
+const closingTier=bestSkill.pct>=60?'is-good':bestSkill.pct>=30?'is-okay':'is-reset';
+const closingNote=
+  bestSkill.pct>=85 ? `🎉 ${bestSkill.name} is excellent at ${bestSkill.pct}% — your foundation is strong. Now push your weaker skills.`
+  : bestSkill.pct>=60 ? `👍 ${bestSkill.name} is your strongest area at ${bestSkill.pct}% — build the others up from there.`
+  : bestSkill.pct>=30 ? `🌱 ${bestSkill.name} is relatively strongest at ${bestSkill.pct}%, but every skill needs work. Try reviewing fewer new words per round so more of them stick.`
+  : `🧭 Nothing is above ${bestSkill.pct}% yet — that's a signal, not a failure. Cut back on new words and repeat the same small set until they stick before adding more.`;
+document.getElementById('workNext').innerHTML=`<div class="work-grid">
+  <div>
+    <div class="work-col-title">Weakest chapters & skill</div>
+    ${weakChapters.map(c=>`<div class="weak-row"><div class="weak-name">${c.name}<small>${c.correct}/${c.seen} correct</small></div><div class="weak-pct" style="color:${tone(c.pct)}">${c.pct}%</div><button class="mock-btn mock-btn-sm" data-mock="Drill ${c.name}">Drill</button></div>`).join('')}
+    <div class="weak-row"><div class="weak-name">${weakestSkill.name}<small>${weakestSkill.correct}/${weakestSkill.seen} correct</small></div><div class="weak-pct" style="color:${tone(weakestSkill.pct)}">${weakestSkill.pct}%</div><button class="mock-btn mock-btn-sm" data-mock="Drill ${weakestSkill.name}">Drill</button></div>
+  </div>
+  <div>
+    <div class="work-col-title">Words that keep tripping you up</div>
+    <div class="leech-list">${leeches.map(l=>{const p=Math.round(l.correct/l.seen*100);return `<div class="leech"><span class="leech-hanzi">${l.hanzi}</span><div class="leech-copy"><b>${l.meaning}</b><span>${l.pinyin}</span></div><span class="leech-score" style="color:${tone(p)}">${l.correct}/${l.seen}</span></div>`;}).join('')}</div>
+    <div class="leech-actions"><button class="mock-btn" data-mock="Practice these ${leeches.length} words">Practice these ${leeches.length} words</button></div>
+  </div>
+</div>
+<button class="mock-btn mock-btn-primary mock-btn-block" data-mock="Start a focused session: ${weakestSkill.name} + ${slipping} slipping words">▶ Start a focused session on your weak spots</button>
+<div class="win-banner ${closingTier}">${closingNote}</div>`;
+
+// Mock action feedback — buttons are illustrative in this concept file; show intent on tap.
+function mockToast(msg){let t=document.getElementById('mockToast');if(!t){t=document.createElement('div');t.id='mockToast';t.className='mock-toast';document.body.appendChild(t);}t.textContent='Demo — would: '+msg;t.classList.add('show');clearTimeout(mockToast._t);mockToast._t=setTimeout(()=>t.classList.remove('show'),2400);}
+document.addEventListener('click',e=>{const b=e.target.closest('[data-mock]');if(b)mockToast(b.dataset.mock);});
+function renderHistory(filter='all'){
+  const visible=rounds.filter(item=>filter==='all'||item.type===filter).sort((a,b)=>b.day-a.day);
+  document.getElementById('historyBody').innerHTML=visible.length?`<table class="history-table"><thead><tr><th>Date</th><th>Exercise</th><th>Scope</th><th>Result</th><th>Accuracy</th></tr></thead><tbody>${visible.map(item=>{const pct=Math.round(item.correct/item.items*100);return `<tr><td>Jul ${item.day}</td><td><span class="activity-kind"><i class="kind-icon" style="background:${meta[item.type].color}">${meta[item.type].short}</i><span><b>${item.label}</b><small>${item.time}</small></span></span></td><td>${item.scope}<span class="scope-small">${item.items} ${item.type==='hsk'?'questions':'words'}</span></td><td>${item.correct} correct · ${item.items-item.correct} missed</td><td class="accuracy-text" style="color:${tone(pct)}">${pct}%</td></tr>`}).join('')}</tbody></table>`:'<div class="empty-filter">No completed rounds in this category.</div>';
+}
+document.getElementById('filters').addEventListener('click',event=>{const button=event.target.closest('[data-filter]');if(!button)return;document.querySelectorAll('.filter').forEach(item=>item.classList.toggle('is-active',item===button));renderHistory(button.dataset.filter)});
+renderHistory();
+</script>
+</body>
+</html>

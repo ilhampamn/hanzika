@@ -1,0 +1,876 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hanzika · Study session (Flashcards · Translate · Write)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=LXGW+WenKai:wght@500;700&family=Nunito:wght@600;700;800;900&family=Noto+Sans+SC:wght@500;700;900&display=swap" rel="stylesheet">
+<style>
+  /* =====================================================================
+     DESIGN TOKENS — lifted verbatim from hanzika_18_hover_dictionary_stable.html
+     Pink = selection / active / primary CTA (learn once, holds everywhere).
+     Color variety (blue/green/orange/purple/yellow) = DATA only (status/tone).
+     ===================================================================== */
+  :root{
+    --font-hanzi:'Noto Sans SC','LXGW WenKai','PingFang SC','Microsoft YaHei',sans-serif;
+    --bg:        #FAFAFA;
+    --surface:   #FFFFFF;
+    --surface-2: #F7F7F8;
+    --border:    #E4E4E7;
+    --border-2:  #CACACE;
+    --text-hi:   #3F3F46;
+    --text-lo:   #71717A;
+    --text-faint:#A1A1AA;
+    --green:#58CC02; --green-dk:#46A302; --green-bg:#D7FFB8;
+    --blue:#1CB0F6;  --blue-dk:#1899D6;  --blue-bg:#DDF4FF;
+    --red:#FF4B4B;   --red-dk:#EA2B2B;   --red-bg:#FFDFE0;
+    --yellow:#FFC800;--yellow-dk:#E6A800;--yellow-bg:#FFF3C4;
+    --orange:#FF9600;--orange-dk:#E2600A;--orange-bg:#FFEAD1;
+    --purple:#CE82FF;--purple-dk:#8E3FE0;--purple-bg:#F2E6FF;
+    --pink:#FF4B91;  --pink-dk:#D93678;  --pink-bg:#FFF0F6;
+    --shadow-sm: 0 4px 0 rgba(63,63,70,.10);
+    --shadow-card: 0 10px 28px rgba(24,24,27,.07);
+    /* tone colors — pronunciation tone ONLY */
+    --t1:#FF4B4B; --t2:#FF9600; --t3:#58CC02; --t4:#1CB0F6; --t0:#AFAFAF;
+    --ease-out: cubic-bezier(0.0,0,0.2,1);
+    --ease-std: cubic-bezier(0.4,0,0.2,1);
+    --ease-pop: cubic-bezier(0.34,1.56,0.64,1);
+    --bubble-radius:22px;
+  }
+  *{ margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  [hidden]{ display:none !important; }
+  html,body{ height:100%; }
+  body{
+    background:var(--bg); color:var(--text-hi);
+    font-family:'Nunito', system-ui, sans-serif;
+    min-height:100dvh; overflow-x:hidden;
+  }
+  button,input,select,textarea{ font-family:inherit; }
+  ::selection{ background:var(--pink-bg); color:var(--pink-dk); }
+  .visually-hidden{ position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0,0,0,0); }
+
+  /* =================== APP FRAME =================== */
+  .app-frame{
+    max-width:720px; margin:0 auto; min-height:100dvh;
+    display:flex; flex-direction:column; padding:20px 16px 40px;
+  }
+  .top-nav{
+    display:flex; align-items:center; gap:12px; margin-bottom:18px;
+  }
+  .brand{ display:flex; align-items:baseline; gap:8px; }
+  .brand-zh{ font-family:var(--font-hanzi); font-weight:900; font-size:26px; color:var(--pink); line-height:1; }
+  .brand-en{ font-weight:900; font-size:15px; letter-spacing:.02em; color:var(--text-hi); }
+  .brand-tag{ margin-left:auto; font-size:11px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; color:var(--text-faint); }
+
+  /* mode tabs — pink = selected */
+  .mode-nav{ display:flex; gap:8px; background:var(--surface); border:2px solid var(--border);
+    border-radius:99px; padding:5px; box-shadow:var(--shadow-card); margin-bottom:20px; }
+  .mode-tab{
+    flex:1; border:none; background:transparent; cursor:pointer; border-radius:99px;
+    padding:10px 6px; font-weight:900; font-size:14px; color:var(--text-lo);
+    display:flex; align-items:center; justify-content:center; gap:6px;
+    transition:background 140ms var(--ease-std), color 140ms var(--ease-std), transform 100ms var(--ease-out);
+  }
+  .mode-tab .ic{ width:17px; height:17px; }
+  .mode-tab:hover{ color:var(--text-hi); }
+  .mode-tab.is-active{ background:var(--pink); color:#fff; box-shadow:0 3px 0 var(--pink-dk); }
+  .mode-tab:active{ transform:translateY(1px); }
+
+  /* =================== SETUP CARD =================== */
+  .card-panel{
+    background:var(--surface); border:2px solid var(--border);
+    border-radius:var(--bubble-radius); box-shadow:var(--shadow-card); padding:22px 22px 24px;
+  }
+  .setup-lead{ margin-bottom:20px; }
+  .setup-lead h1{ font-size:22px; font-weight:900; }
+  .setup-lead p{ margin-top:4px; font-size:14px; font-weight:700; color:var(--text-lo); }
+
+  .field{ margin-bottom:20px; }
+  .field-label{ font-size:11px; font-weight:900; text-transform:uppercase; letter-spacing:.08em; color:var(--text-faint); margin-bottom:9px; display:block; }
+
+  .chip-row{ display:flex; flex-wrap:wrap; gap:8px; }
+  .chip{
+    border:2px solid var(--border); background:var(--surface); color:var(--text-hi);
+    border-radius:99px; padding:8px 14px; font-weight:800; font-size:13px; cursor:pointer;
+    box-shadow:0 3px 0 var(--border);
+    transition:transform 100ms var(--ease-out), box-shadow 100ms var(--ease-out), background 120ms var(--ease-std), border-color 120ms var(--ease-std), color 120ms var(--ease-std);
+  }
+  .chip:hover{ background:var(--surface-2); }
+  .chip:active{ transform:translateY(3px); box-shadow:none; }
+  .chip.is-active{ background:var(--pink); border-color:var(--pink); color:#fff; box-shadow:0 3px 0 var(--pink-dk); }
+  .chip .chip-count{ opacity:.65; font-weight:800; margin-left:5px; font-variant-numeric:tabular-nums; }
+  .chip.is-active .chip-count{ opacity:.85; }
+
+  .chapter-scroll{ display:flex; gap:8px; overflow-x:auto; padding-bottom:6px; margin:0 -4px; padding-left:4px; padding-right:4px; }
+  .chapter-scroll::-webkit-scrollbar{ height:6px; }
+  .chapter-scroll::-webkit-scrollbar-thumb{ background:var(--border); border-radius:99px; }
+  .chip-chapter{ flex:0 0 auto; }
+
+  .count-row{ display:flex; gap:8px; }
+  .count-opt{
+    flex:1; border:2px solid var(--border); background:var(--surface); color:var(--text-hi);
+    border-radius:14px; padding:12px 4px; font-weight:900; font-size:16px; cursor:pointer;
+    box-shadow:0 4px 0 var(--border); font-variant-numeric:tabular-nums;
+    transition:transform 100ms var(--ease-out), box-shadow 100ms var(--ease-out), background 120ms var(--ease-std), border-color 120ms var(--ease-std), color 120ms var(--ease-std);
+  }
+  .count-opt:active{ transform:translateY(4px); box-shadow:none; }
+  .count-opt.is-active{ background:var(--pink); border-color:var(--pink); color:#fff; box-shadow:0 4px 0 var(--pink-dk); }
+
+  .btn-primary{
+    width:100%; border:none; cursor:pointer; background:var(--pink); color:#fff;
+    border-radius:16px; padding:15px; font-weight:900; font-size:16px;
+    box-shadow:0 4px 0 var(--pink-dk);
+    transition:transform 100ms var(--ease-out), box-shadow 100ms var(--ease-out), filter 120ms var(--ease-std);
+  }
+  .btn-primary:hover{ filter:brightness(1.03); }
+  .btn-primary:active{ transform:translateY(4px); box-shadow:0 0 0 var(--pink-dk); }
+  .btn-primary:disabled{ background:var(--border); color:var(--text-faint); box-shadow:0 4px 0 var(--border-2); cursor:not-allowed; }
+
+  .setup-meta{ margin-top:14px; text-align:center; font-size:12.5px; font-weight:800; color:var(--text-faint); }
+
+  /* =================== SESSION PROGRESS =================== */
+  .session-head{ display:flex; align-items:center; gap:12px; margin-bottom:16px; }
+  .icon-btn{
+    border:2px solid var(--border); background:var(--surface); color:var(--text-lo);
+    width:40px; height:40px; border-radius:50%; cursor:pointer; font-size:18px; font-weight:900;
+    display:flex; align-items:center; justify-content:center; box-shadow:0 3px 0 var(--border); flex:0 0 auto;
+    transition:transform 100ms var(--ease-out), box-shadow 100ms var(--ease-out);
+  }
+  .icon-btn:active{ transform:translateY(3px); box-shadow:none; }
+  .progress-track{ flex:1; height:14px; background:var(--surface-2); border:2px solid var(--border); border-radius:99px; overflow:hidden; }
+  .progress-fill{ height:100%; width:0%; background:var(--pink); border-radius:99px; transition:width 500ms var(--ease-pop); }
+  .progress-count{ font-size:13px; font-weight:900; color:var(--text-lo); font-variant-numeric:tabular-nums; flex:0 0 auto; min-width:42px; text-align:right; }
+
+  /* =================== FLASHCARD =================== */
+  .stage-wrap{ display:flex; flex-direction:column; align-items:center; }
+  .stage{ position:relative; width:min(100%,360px); height:440px; perspective:1400px; margin-top:4px; }
+  .card{
+    position:absolute; inset:0; border-radius:var(--bubble-radius); z-index:3;
+    transform-style:preserve-3d; transition:transform 560ms var(--ease-std), opacity 300ms, box-shadow 300ms;
+    cursor:pointer;
+  }
+  .card.is-flipped{ transform:rotateY(180deg); }
+  .card.layer-1{ transform:translateY(14px) scale(.955); z-index:2; }
+  .card.layer-2{ transform:translateY(28px) scale(.91); opacity:.5; z-index:1; }
+  .card.swipe-right{ transform:translateX(120%) rotate(14deg); opacity:0; }
+  .card.swipe-left{ transform:translateX(-120%) rotate(-14deg); opacity:0; }
+  .face{
+    position:absolute; inset:0; backface-visibility:hidden; -webkit-backface-visibility:hidden;
+    background:var(--surface); border:2px solid var(--border); border-radius:var(--bubble-radius);
+    box-shadow:var(--shadow-card); display:flex; flex-direction:column; align-items:center; overflow:hidden;
+  }
+  .face-back{ transform:rotateY(180deg); padding:22px 22px 18px; justify-content:flex-start; text-align:center; }
+  .card-meta{ display:flex; align-items:center; justify-content:space-between; width:100%; padding:16px 18px 0; }
+  .hsk-badge{
+    font-size:11px; font-weight:800; letter-spacing:.08em;
+    text-transform:uppercase; color:var(--purple-dk); background:var(--purple-bg); border-radius:99px; padding:5px 11px;
+  }
+  /* per-word maturity — data colour by Leitner stage */
+  .strength{ display:flex; gap:4px; align-items:center; }
+  .strength i{ width:8px; height:8px; border-radius:50%; background:var(--border); transition:background 200ms; }
+  .strength i.on{ background:var(--dot-color, var(--green)); }
+  .again-chip{
+    align-self:center; margin-top:12px; font-size:11px; font-weight:800; letter-spacing:.02em;
+    color:var(--yellow-dk); background:var(--yellow-bg); border:2px solid var(--yellow); border-radius:99px; padding:4px 12px;
+  }
+  .tianzige-row{ display:flex; gap:8px; justify-content:center; align-items:center; width:100%; padding:0 20px; margin:auto; }
+  .tianzige{
+    position:relative; flex:1 1 0; min-width:0; max-width:150px; aspect-ratio:1;
+    border:2.5px solid var(--border); border-radius:10px; display:flex; align-items:center; justify-content:center;
+    container-type:inline-size;
+  }
+  .tianzige svg{ position:absolute; inset:0; width:100%; height:100%; }
+  .hanzi{ font-family:var(--font-hanzi); font-weight:900; line-height:1; z-index:1; font-size:62cqw; }
+  .hint-wrap{ margin-bottom:16px; display:flex; flex-direction:column; align-items:center; gap:8px; }
+  .hint-btn{
+    border:2px solid var(--border); background:var(--surface); color:var(--pink);
+    border-radius:12px; padding:7px 14px; cursor:pointer; font-size:11px; font-weight:900;
+    text-transform:uppercase; letter-spacing:.07em; box-shadow:0 3px 0 var(--border);
+  }
+  .hint-btn:active{ transform:translateY(3px); box-shadow:none; }
+  .theme-hint{
+    display:none; font-size:12px; font-weight:800; color:var(--text-lo);
+    background:var(--pink-bg); border:2px solid var(--pink); border-radius:99px; padding:5px 11px;
+  }
+  .theme-hint.is-visible{ display:block; }
+  .back-hanzi{ font-family:var(--font-hanzi); font-weight:900; font-size:clamp(30px,8vw,38px); line-height:1; margin-top:8px; }
+  .pinyin-display{ margin-top:10px; font-size:clamp(17px,4.8vw,20px); font-weight:800; display:flex; gap:7px; justify-content:center; flex-wrap:wrap; }
+  .divider{ width:38px; height:3px; margin:14px auto 13px; background:var(--border); border-radius:2px; }
+  .meaning-display{ font-size:clamp(14px,3.8vw,15.5px); font-weight:700; color:var(--text-hi); line-height:1.4; max-width:26ch; }
+  .example{ margin-top:auto; padding-top:10px; width:100%; border-top:2px dashed var(--border); max-height:120px; overflow:auto; }
+  .example-title{ font-size:10px; font-weight:900; color:var(--text-faint); text-transform:uppercase; letter-spacing:.08em; margin-bottom:5px; }
+  .example-item{ padding:5px 2px; border-bottom:1px solid var(--surface-2); }
+  .example-item:last-child{ border-bottom:none; }
+  .example-zh{ font-family:var(--font-hanzi); font-size:12.5px; font-weight:700; color:var(--text-hi); line-height:1.4; }
+  .example-en{ margin-top:1px; font-size:10.5px; font-weight:600; color:var(--text-faint); line-height:1.35; }
+  .seal{
+    position:absolute; top:16px; right:16px; width:36px; height:36px; border-radius:12px;
+    background:var(--pink); color:#fff; font-family:var(--font-hanzi); font-weight:900; font-size:18px;
+    display:flex; align-items:center; justify-content:center; box-shadow:0 3px 0 var(--pink-dk); transform:rotate(-6deg);
+  }
+
+  .study-controls{ width:min(100%,380px); margin-top:22px; min-height:96px; }
+  .flip-hint{ font-size:13px; font-weight:700; color:var(--text-faint); display:flex; align-items:center; justify-content:center; gap:8px; margin-bottom:12px; text-align:center; }
+  kbd{ font-size:11px; font-weight:800; background:var(--surface-2); color:var(--text-lo); border:2px solid var(--border); border-bottom-width:3px; border-radius:7px; padding:2px 7px; }
+  .ratings{ display:flex; gap:9px; width:100%; }
+  .rate-btn{
+    flex:1; cursor:pointer; background:var(--surface); border:2px solid var(--border);
+    border-radius:14px; padding:12px 4px 10px; display:flex; flex-direction:column; align-items:center; gap:3px;
+    color:var(--text-hi); box-shadow:0 4px 0 var(--border);
+    transition:transform 100ms var(--ease-out), box-shadow 100ms var(--ease-out), background 120ms var(--ease-std), border-color 120ms var(--ease-std);
+  }
+  .rate-btn:active{ transform:translateY(4px); box-shadow:0 0 0 var(--border); }
+  .rate-label{ font-size:13px; font-weight:900; }
+  .rate-key{ font-size:10px; font-weight:800; color:var(--text-faint); }
+  .rate-btn[data-act="know"],.rate-btn[data-act="right"]{ border-color:var(--green); box-shadow:0 4px 0 var(--green); }
+  .rate-btn[data-act="know"]:hover,.rate-btn[data-act="right"]:hover{ background:var(--green-bg); }
+  .rate-btn[data-act="know"]:active,.rate-btn[data-act="right"]:active{ box-shadow:0 0 0 var(--green); }
+  .rate-btn[data-act="know"] .rate-label,.rate-btn[data-act="right"] .rate-label{ color:var(--green-dk); }
+  .rate-btn[data-act="dont"],.rate-btn[data-act="wrong"]{ border-color:var(--red); box-shadow:0 4px 0 var(--red); }
+  .rate-btn[data-act="dont"]:hover,.rate-btn[data-act="wrong"]:hover{ background:var(--red-bg); }
+  .rate-btn[data-act="dont"]:active,.rate-btn[data-act="wrong"]:active{ box-shadow:0 0 0 var(--red); }
+  .rate-btn[data-act="dont"] .rate-label,.rate-btn[data-act="wrong"] .rate-label{ color:var(--red-dk); }
+  .btn-continue{
+    width:100%; border:none; cursor:pointer; background:var(--pink); color:#fff;
+    border-radius:14px; padding:14px; font-weight:900; font-size:15px; box-shadow:0 4px 0 var(--pink-dk);
+    transition:transform 100ms var(--ease-out), box-shadow 100ms var(--ease-out);
+  }
+  .btn-continue:active{ transform:translateY(4px); box-shadow:0 0 0 var(--pink-dk); }
+
+  /* =================== QUIZ (translate / write) =================== */
+  .quiz-card{
+    background:var(--surface); border:2px solid var(--border); border-radius:var(--bubble-radius);
+    box-shadow:var(--shadow-card); padding:26px 22px; transition:border-color 200ms, box-shadow 200ms;
+  }
+  .quiz-card.is-correct{ border-color:var(--green); }
+  .quiz-card.is-wrong{ border-color:var(--red); }
+  .quiz-label{ font-size:11px; font-weight:900; text-transform:uppercase; letter-spacing:.08em; color:var(--text-faint); }
+  .quiz-prompt{ margin:14px 0; font-weight:900; font-size:clamp(26px,7vw,34px); line-height:1.15; color:var(--text-hi); }
+  .quiz-prompt.is-zh{ font-family:var(--font-hanzi); }
+  .quiz-hint{ font-size:15px; font-weight:800; color:var(--text-lo); display:flex; gap:6px; flex-wrap:wrap; }
+  .quiz-hint .pin span{ font-weight:800; }
+  .quiz-input{
+    width:100%; margin-top:18px; border:2px solid var(--border); border-radius:14px;
+    padding:14px 16px; font-size:18px; font-weight:800; color:var(--text-hi); background:var(--surface-2);
+    transition:border-color 150ms, background 150ms;
+  }
+  .quiz-input:focus{ outline:none; border-color:var(--pink); background:var(--surface); }
+  .quiz-input.is-correct{ border-color:var(--green); background:var(--green-bg); }
+  .quiz-input.is-wrong{ border-color:var(--red); background:var(--red-bg); }
+  .quiz-actions{ margin-top:16px; display:flex; flex-direction:column; gap:10px; }
+  .btn-ghost{
+    border:2px solid var(--border); background:var(--surface); color:var(--text-lo);
+    border-radius:14px; padding:12px; font-weight:900; font-size:13px; cursor:pointer; box-shadow:0 3px 0 var(--border);
+    transition:transform 100ms var(--ease-out), box-shadow 100ms var(--ease-out);
+  }
+  .btn-ghost:active{ transform:translateY(3px); box-shadow:none; }
+  .quiz-feedback{ margin-top:18px; }
+  .quiz-verdict{ font-size:15px; font-weight:900; margin-bottom:12px; }
+  .quiz-verdict.ok{ color:var(--green-dk); }
+  .quiz-verdict.no{ color:var(--red-dk); }
+  .quiz-verdict.revealed{ color:var(--yellow-dk); }
+  .fb-answer{ background:var(--surface-2); border:2px solid var(--border); border-radius:16px; padding:16px; text-align:center; }
+  .fb-label{ font-size:10px; font-weight:900; text-transform:uppercase; letter-spacing:.08em; color:var(--text-faint); }
+  .fb-hanzi{ font-family:var(--font-hanzi); font-weight:900; font-size:32px; margin-top:6px; }
+  .fb-pinyin{ margin-top:6px; font-size:17px; font-weight:800; display:flex; gap:6px; justify-content:center; flex-wrap:wrap; }
+  .fb-meaning{ margin-top:6px; font-size:14px; font-weight:700; color:var(--text-lo); }
+
+  /* =================== SUMMARY =================== */
+  .study-summary{
+    position:relative; text-align:center; padding:34px 22px; background:var(--surface); border:2px solid var(--border);
+    border-radius:var(--bubble-radius); box-shadow:var(--shadow-card); overflow:hidden;
+  }
+  .summary-zh{ font-family:var(--font-hanzi); font-weight:900; font-size:42px; color:var(--pink); position:relative; z-index:1; }
+  .summary-sub{ font-size:12.5px; font-weight:800; color:var(--text-faint); letter-spacing:.12em; text-transform:uppercase; margin-top:6px; position:relative; z-index:1; }
+  .summary-stats{ display:flex; gap:16px; justify-content:center; margin:26px 0; position:relative; z-index:1; }
+  .summary-stat b{ display:block; font-size:26px; font-weight:900; font-variant-numeric:tabular-nums; }
+  .summary-stat span{ font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:.05em; color:var(--text-faint); }
+  .summary-actions{ display:flex; flex-direction:column; gap:10px; position:relative; z-index:1; }
+  .confetti-piece{ position:absolute; width:9px; height:9px; border-radius:2px; top:34%; left:50%; pointer-events:none; z-index:0; }
+
+  .empty-note{ text-align:center; font-size:14px; font-weight:700; color:var(--text-lo); padding:30px 10px; }
+
+  @media (max-width:520px){
+    .stage{ height:400px; }
+    .mode-tab{ font-size:13px; }
+    .mode-tab .label{ display:inline; }
+  }
+  @media (prefers-reduced-motion: reduce){
+    *{ transition-duration:.01ms !important; animation-duration:.01ms !important; }
+  }
+</style>
+</head>
+<body>
+<div id="srStatus" class="visually-hidden" role="status" aria-live="polite"></div>
+<div class="app-frame">
+  <header class="top-nav">
+    <div class="brand"><span class="brand-zh">汉字卡</span><span class="brand-en">Hanzika</span></div>
+    <span class="brand-tag">Study session</span>
+  </header>
+
+  <!-- MODE TABS -->
+  <nav class="mode-nav" id="modeNav" aria-label="Study mode">
+    <button class="mode-tab is-active" data-mode="flashcard" type="button">
+      <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="M3 10h18"/></svg>
+      <span class="label">Flashcards</span>
+    </button>
+    <button class="mode-tab" data-mode="translate" type="button">
+      <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h8M8 5c0 5-3 9-5 11M5 9c1 3 4 5 6 6"/><path d="M14 19l3.5-8 3.5 8M15.5 16h4"/></svg>
+      <span class="label">Translate</span>
+    </button>
+    <button class="mode-tab" data-mode="write" type="button">
+      <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16"/><path d="M14.5 4.5l5 5L8 21l-5 1 1-5z"/></svg>
+      <span class="label">Write</span>
+    </button>
+  </nav>
+
+  <!-- SETUP -->
+  <section class="card-panel" id="setup">
+    <div class="setup-lead">
+      <h1 id="setupTitle">Flashcards</h1>
+      <p id="setupSubtitle">Commit first, then check yourself honestly.</p>
+    </div>
+
+    <div class="field">
+      <span class="field-label">Which words</span>
+      <div class="chip-row" id="scopeChips"></div>
+    </div>
+
+    <div class="field">
+      <span class="field-label">HSK 2 chapters</span>
+      <div class="chapter-scroll" id="chapterChips"></div>
+    </div>
+
+    <div class="field">
+      <span class="field-label">Session length</span>
+      <div class="count-row" id="countRow"></div>
+    </div>
+
+    <button class="btn-primary" id="startBtn" type="button">Start studying</button>
+    <div class="setup-meta" id="setupMeta"></div>
+  </section>
+
+  <!-- FLASHCARD SESSION -->
+  <section id="flashSession" hidden>
+    <div class="session-head">
+      <button class="icon-btn" id="flashExit" type="button" aria-label="Exit session">✕</button>
+      <div class="progress-track"><div class="progress-fill" id="flashFill"></div></div>
+      <span class="progress-count" id="flashCount">0/0</span>
+    </div>
+    <div class="stage-wrap">
+      <div class="stage" id="stage"></div>
+      <div class="study-controls">
+        <div class="flip-hint" id="flipHint"><span id="flipHintText">Do you recognize this word?</span></div>
+        <div class="ratings" id="commitBtns">
+          <button class="rate-btn" data-act="know" type="button"><span class="rate-label">I know it</span><span class="rate-key">press 1</span></button>
+          <button class="rate-btn" data-act="dont" type="button"><span class="rate-label">Don't know</span><span class="rate-key">press 2</span></button>
+        </div>
+        <div class="ratings" id="confirmBtns" style="display:none">
+          <button class="rate-btn" data-act="right" type="button"><span class="rate-label">Got it right</span><span class="rate-key">press 1</span></button>
+          <button class="rate-btn" data-act="wrong" type="button"><span class="rate-label">Missed it</span><span class="rate-key">press 2</span></button>
+        </div>
+        <button class="btn-continue" id="continueBtn" type="button" style="display:none">Continue</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- QUIZ SESSION (translate / write) -->
+  <section id="quizSession" hidden>
+    <div class="session-head">
+      <button class="icon-btn" id="quizExit" type="button" aria-label="Exit session">✕</button>
+      <div class="progress-track"><div class="progress-fill" id="quizFill"></div></div>
+      <span class="progress-count" id="quizCount">0/0</span>
+    </div>
+    <div class="quiz-card" id="quizCard">
+      <span class="quiz-label" id="quizLabel">Translate to Chinese (pinyin)</span>
+      <div class="quiz-prompt" id="quizPrompt">—</div>
+      <div class="quiz-hint" id="quizHint"></div>
+      <input class="quiz-input" id="quizInput" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="Type your answer">
+      <div class="quiz-actions">
+        <button class="btn-primary" id="quizCheck" type="button">Check</button>
+        <button class="btn-ghost" id="quizReveal" type="button">Show answer</button>
+        <button class="btn-continue" id="quizNext" type="button" style="display:none">Continue</button>
+      </div>
+      <div class="quiz-feedback" id="quizFeedback"></div>
+    </div>
+  </section>
+
+  <!-- SUMMARY -->
+  <section id="summary" hidden>
+    <div class="study-summary">
+      <div class="summary-zh" id="summaryZh">好</div>
+      <div class="summary-sub" id="summarySub">Session complete</div>
+      <div class="summary-stats" id="summaryStats"></div>
+      <div class="summary-actions">
+        <button class="btn-primary" id="summaryAgain" type="button">Study again</button>
+      </div>
+    </div>
+  </section>
+</div>
+
+<!-- authentic HSK 2 curriculum data (chapters 1–15) -->
+<script src="./hanzika_hsk_data.js"></script>
+<script src="./hanzika_hsk_study_data.js"></script>
+<script>
+(function(){
+  'use strict';
+  const RM = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  /* ---------- tone parsing (mirrors the main app) ---------- */
+  const TONE_MARKS = {
+    'ā':1,'á':2,'ǎ':3,'à':4,'ē':1,'é':2,'ě':3,'è':4,'ī':1,'í':2,'ǐ':3,'ì':4,
+    'ō':1,'ó':2,'ǒ':3,'ò':4,'ū':1,'ú':2,'ǔ':3,'ù':4,'ǖ':1,'ǘ':2,'ǚ':3,'ǜ':4
+  };
+  const TONE_VARS = ['--t0','--t1','--t2','--t3','--t4'];
+  function toneVar(t){ return `var(${TONE_VARS[t] || '--t0'})`; }
+  function toneOf(syl){ for(const ch of syl){ if(TONE_MARKS[ch]) return TONE_MARKS[ch]; } return 0; }
+  function parsePinyin(str, charCount){
+    const cleaned = String(str||'').trim();
+    if(!cleaned) return Array.from({length:charCount}, ()=>['',0]);
+    const sylls = cleaned.split(/\s+/).map(s => [s, toneOf(s)]);
+    while(sylls.length < charCount) sylls.push(['',0]);
+    return sylls;
+  }
+  function esc(s){ return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+  /* ---------- build word list from the HSK curriculum ---------- */
+  const curriculum = window.HSK_STUDY_CURRICULUM;
+  const WORDS = [];
+  const CHAPTERS = [];
+  if(curriculum && Array.isArray(curriculum.chapters)){
+    curriculum.chapters.forEach(ch => {
+      CHAPTERS.push({ number:ch.number, title:ch.titleEn || ch.titleZh || `Chapter ${ch.number}` });
+      const sentences = (ch.reading && ch.reading.sentences) || [];
+      // authentic full sentences from the chapter's listening prompts widen example coverage
+      const qSentences = (ch.questions || []).map(q => q.audio).filter(Boolean);
+      const sentencePool = [...sentences, ...qSentences];
+      (ch.vocabulary || []).forEach(([hanzi, pinyin, meaning], vi) => {
+        const chars = Array.from(hanzi);
+        // authentic examples: real chapter sentences (reading + listening) that actually contain the word
+        const examples = [...new Set(sentencePool.filter(s => s.includes(hanzi)))].slice(0,2).map(s => ({ zh:s }));
+        // seed a Leitner box deterministically so the "New / Learning / Review" scopes have content
+        const box = ((ch.number * 7 + vi * 3 + hanzi.length) % 6);
+        WORDS.push({
+          id:`${ch.id}:${vi}`,
+          chars, pinyin:parsePinyin(pinyin, chars.length), meaning,
+          hsk:2, hskChapter:ch.number, examples,
+          stats:{ box }
+        });
+      });
+    });
+  }
+  function statusOf(box){ return box===0 ? 'new' : box<=2 ? 'learning' : box<=4 ? 'young' : 'mastered'; }
+  // maturity strength dots — data colour by Leitner stage (never pink; pink = selection only)
+  const STATUS_COLOR = { new:'--border-2', learning:'--yellow', young:'--blue', mastered:'--green' };
+  function strengthDots(box){
+    let dots=''; for(let i=0;i<5;i++) dots+=`<i class="${i<box?'on':''}"></i>`;
+    return `<div class="strength" style="--dot-color:var(${STATUS_COLOR[statusOf(box)]})" aria-label="Strength: ${statusOf(box)}">${dots}</div>`;
+  }
+  function announce(t){ const el=$('srStatus'); if(el) el.textContent=t; }
+
+  /* ---------- config state ---------- */
+  const MODES = {
+    flashcard:{ label:'Flashcards', subtitle:'Commit first, then check yourself honestly.', start:'Start studying' },
+    translate:{ label:'Translate',  subtitle:'See the English, type the Chinese in pinyin.', start:'Start translating' },
+    write:{     label:'Write',       subtitle:'See the meaning, recall and type the characters.', start:'Start writing' }
+  };
+  const SCOPES = [
+    { key:'all', label:'All words', test:()=>true },
+    { key:'new', label:'New', test:w=>statusOf(w.stats.box)==='new' },
+    { key:'learning', label:'Learning', test:w=>statusOf(w.stats.box)==='learning' },
+    { key:'review', label:'Review', test:w=>w.stats.box>=3 }
+  ];
+  const COUNTS = [5,10,15,20];
+
+  let mode='flashcard', scope='all', count=10;
+  const selectedChapters = new Set(); // empty = all
+
+  /* ---------- setup rendering ---------- */
+  const $ = id => document.getElementById(id);
+
+  function scopedWords(){
+    const scopeTest = SCOPES.find(s=>s.key===scope).test;
+    return WORDS.filter(w =>
+      scopeTest(w) &&
+      (selectedChapters.size===0 || selectedChapters.has(w.hskChapter))
+    );
+  }
+
+  function renderSetup(){
+    $('setupTitle').textContent = MODES[mode].label;
+    $('setupSubtitle').textContent = MODES[mode].subtitle;
+    $('startBtn').textContent = MODES[mode].start;
+
+    // scope chips (counts respect the chapter filter)
+    const chapFilter = w => selectedChapters.size===0 || selectedChapters.has(w.hskChapter);
+    $('scopeChips').innerHTML = SCOPES.map(s=>{
+      const n = WORDS.filter(w=>s.test(w) && chapFilter(w)).length;
+      return `<button class="chip ${s.key===scope?'is-active':''}" data-scope="${s.key}" type="button">${s.label}<span class="chip-count">${n}</span></button>`;
+    }).join('');
+
+    // chapter chips
+    const allActive = selectedChapters.size===0;
+    $('chapterChips').innerHTML =
+      `<button class="chip chip-chapter ${allActive?'is-active':''}" data-chapter="all" type="button">All</button>` +
+      CHAPTERS.map(c=>`<button class="chip chip-chapter ${selectedChapters.has(c.number)?'is-active':''}" data-chapter="${c.number}" type="button">Ch. ${c.number}</button>`).join('');
+
+    // count options
+    $('countRow').innerHTML = COUNTS.map(c=>`<button class="count-opt ${c===count?'is-active':''}" data-count="${c}" type="button">${c}</button>`).join('');
+
+    const avail = scopedWords().length;
+    const start = $('startBtn');
+    start.disabled = avail===0;
+    $('setupMeta').textContent = avail===0
+      ? 'No words match this selection — widen the filters.'
+      : `${Math.min(count,avail)} of ${avail} matching words this round`;
+  }
+
+  $('scopeChips').addEventListener('click', e=>{ const b=e.target.closest('[data-scope]'); if(b){ scope=b.dataset.scope; renderSetup(); }});
+  $('countRow').addEventListener('click', e=>{ const b=e.target.closest('[data-count]'); if(b){ count=Number(b.dataset.count); renderSetup(); }});
+  $('chapterChips').addEventListener('click', e=>{
+    const b=e.target.closest('[data-chapter]'); if(!b) return;
+    if(b.dataset.chapter==='all'){ selectedChapters.clear(); }
+    else{ const n=Number(b.dataset.chapter); selectedChapters.has(n) ? selectedChapters.delete(n) : selectedChapters.add(n); }
+    renderSetup();
+  });
+  $('modeNav').addEventListener('click', e=>{
+    const t=e.target.closest('.mode-tab'); if(!t) return;
+    mode=t.dataset.mode;
+    document.querySelectorAll('.mode-tab').forEach(x=>x.classList.toggle('is-active', x===t));
+    renderSetup();
+  });
+
+  /* ---------- session state ---------- */
+  let queue=[], qIndex=0, busy=false, initialSize=0;
+  const requeued = new Set();
+  let results = { correct:0, incorrect:0 };
+
+  // prioritize weakest / lowest-box words first, light shuffle among ties
+  function prioritized(words){
+    return words
+      .map(w => ({ w, score:(5-(w.stats.box||0))*0.9 + Math.random()*2.2 }))
+      .sort((a,b)=>b.score-a.score).map(x=>x.w);
+  }
+  function requeueCurrent(){
+    const w = queue[qIndex];
+    if(!w || requeued.has(w.id) || queue.length-qIndex<=2) return;
+    requeued.add(w.id);
+    const pos = Math.min(queue.length, qIndex+3+Math.floor(Math.random()*2));
+    queue.splice(pos, 0, w);
+  }
+  function recordAnswer(word, ok){
+    if(ok){ results.correct++; word.stats.box = Math.min(5, word.stats.box+1); }
+    else { results.incorrect++; word.stats.box = Math.max(0, word.stats.box-1); requeueCurrent(); }
+  }
+  function setProgress(fillEl, countEl){
+    fillEl.style.width = `${((qIndex)/queue.length)*100}%`;
+    countEl.textContent = `${Math.min(qIndex+1,queue.length)}/${queue.length}`;
+  }
+
+  function showSection(id){
+    ['setup','flashSession','quizSession','summary'].forEach(s=>{ $(s).hidden = s!==id; });
+  }
+
+  $('startBtn').addEventListener('click', ()=>{
+    queue = prioritized(scopedWords()).slice(0, count);
+    if(!queue.length) return;
+    initialSize = queue.length; qIndex=0; busy=false;
+    requeued.clear(); results={correct:0,incorrect:0};
+    if(mode==='flashcard') startFlashcards();
+    else startQuiz();
+  });
+  $('flashExit').addEventListener('click', backToSetup);
+  $('quizExit').addEventListener('click', backToSetup);
+  $('summaryAgain').addEventListener('click', backToSetup);
+  function backToSetup(){ showSection('setup'); renderSetup(); }
+
+  /* =====================================================================
+     FLASHCARD MODE — commit-first honesty flow (feedback integrity)
+     ===================================================================== */
+  const stage = $('stage');
+  let cardState='front'; // front | confirm | continue
+
+  const GRID_SVG = `<svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+    <line x1="50" y1="0" x2="50" y2="100" stroke="#E5E5E5" stroke-width="0.8" stroke-dasharray="3 3"/>
+    <line x1="0" y1="50" x2="100" y2="50" stroke="#E5E5E5" stroke-width="0.8" stroke-dasharray="3 3"/>
+    <line x1="0" y1="0" x2="100" y2="100" stroke="#F0F0F0" stroke-width="0.7" stroke-dasharray="3 4"/>
+    <line x1="100" y1="0" x2="0" y2="100" stroke="#F0F0F0" stroke-width="0.7" stroke-dasharray="3 4"/></svg>`;
+
+  function buildCard(word){
+    const card = document.createElement('div');
+    card.className='card'; card.setAttribute('role','group');
+    const hanziFront = word.chars.map(c=>`<div class="tianzige">${GRID_SVG}<div class="hanzi">${esc(c)}</div></div>`).join('');
+    const backHanzi = word.chars.map((c,i)=>`<span style="color:${toneVar(word.pinyin[i]?word.pinyin[i][1]:0)}">${esc(c)}</span>`).join('');
+    const pinyin = word.pinyin.map(([p,t])=>`<span style="color:${toneVar(t)}">${esc(p)}</span>`).join('');
+    const examples = word.examples.length
+      ? `<div class="example"><div class="example-title">In context</div>${word.examples.map(x=>`<div class="example-item"><div class="example-zh">${esc(x.zh)}</div></div>`).join('')}</div>` : '';
+    const resurfaced = requeued.has(word.id);
+    const firstLetter = (word.meaning.match(/[a-z]/i) || ['?'])[0].toUpperCase();
+    card.innerHTML = `
+      <div class="face face-front">
+        <div class="card-meta">
+          <span class="hsk-badge">HSK ${word.hsk} · Ch. ${word.hskChapter}</span>
+          ${strengthDots(word.stats.box)}
+        </div>
+        ${resurfaced ? '<div class="again-chip">↻ Back for another look</div>' : ''}
+        <div class="tianzige-row">${hanziFront}</div>
+        <div class="hint-wrap">
+          <button type="button" class="hint-btn">Need a hint?</button>
+          <div class="theme-hint">Meaning starts with “${firstLetter}”</div>
+        </div>
+      </div>
+      <div class="face face-back">
+        <div class="seal">记</div>
+        <div class="back-hanzi">${backHanzi}</div>
+        <div class="pinyin-display">${pinyin}</div>
+        <div class="divider"></div>
+        <div class="meaning-display">${esc(word.meaning)}</div>
+        ${examples}
+      </div>`;
+    return card;
+  }
+
+  function mountStack(){
+    stage.innerHTML='';
+    for(let i=Math.min(qIndex+2,queue.length-1); i>=qIndex; i--){
+      const c = buildCard(queue[i]);
+      const depth = i-qIndex;
+      if(depth===1) c.classList.add('layer-1');
+      if(depth===2) c.classList.add('layer-2');
+      stage.appendChild(c);
+    }
+    bindTopCard();
+  }
+  function topCard(){ return stage.querySelector('.card:last-child'); }
+
+  function bindTopCard(){
+    const top = topCard(); if(!top) return;
+    const hintBtn = top.querySelector('.hint-btn');
+    if(hintBtn) hintBtn.addEventListener('click', e=>{
+      e.stopPropagation();
+      const hint = top.querySelector('.theme-hint');
+      const vis = hint.classList.toggle('is-visible');
+      hintBtn.textContent = vis ? 'Hide hint' : 'Need a hint?';
+    });
+    // pointer swipe only meaningful after reveal
+    let px=0, dragging=false, moved=false;
+    top.addEventListener('pointerdown', e=>{
+      if(e.target.closest('.hint-btn') || busy || cardState==='front') return;
+      dragging=true; moved=false; px=e.clientX; top.setPointerCapture(e.pointerId);
+      top.style.transition='none';
+    });
+    top.addEventListener('pointermove', e=>{
+      if(!dragging) return;
+      const dx=e.clientX-px; if(Math.abs(dx)>6) moved=true;
+      top.style.transform=`translateX(${dx}px) rotate(${dx*0.04}deg) rotateY(180deg)`;
+    });
+    top.addEventListener('pointerup', e=>{
+      if(!dragging) return; dragging=false;
+      const dx=e.clientX-px; top.style.transition='';
+      if(cardState==='confirm' && Math.abs(dx)>110){ verify(dx>=0); return; }
+      if(cardState==='continue' && Math.abs(dx)>110){ advanceCard(); return; }
+      top.style.transform=''; top.classList.add('is-flipped');
+    });
+  }
+
+  function setCardState(state){
+    cardState=state;
+    $('commitBtns').style.display  = state==='front'    ? 'flex' : 'none';
+    $('confirmBtns').style.display = state==='confirm'  ? 'flex' : 'none';
+    $('continueBtn').style.display = state==='continue' ? 'block':'none';
+    const hint=$('flipHint'); hint.style.display = state==='continue' ? 'none':'flex';
+    if(state==='front')   $('flipHintText').textContent='Do you recognize this word?';
+    if(state==='confirm') $('flipHintText').textContent='Be honest — did you actually know it?';
+  }
+
+  function startFlashcards(){
+    showSection('flashSession');
+    setProgress($('flashFill'), $('flashCount'));
+    setCardState('front');
+    mountStack();
+  }
+
+  function flip(onDone){
+    const top=topCard(); if(!top) return;
+    busy=true; top.classList.add('is-flipped');
+    setTimeout(()=>{ busy=false; if(onDone) onDone(); }, RM?10:560);
+  }
+  function commit(act){
+    if(cardState!=='front'||busy) return;
+    const w=queue[qIndex];
+    if(act==='know') flip(()=>{ setCardState('confirm'); announce(`Revealed: ${w.chars.join('')}, ${wordPinyinPlain(w)} — ${w.meaning}`); });
+    else { recordAnswer(w, false); refreshFlashProgress(); flip(()=>{ setCardState('continue'); announce(`Answer: ${w.chars.join('')}, ${wordPinyinPlain(w)} — ${w.meaning}`); }); }
+  }
+  function verify(right){
+    if(cardState!=='confirm'||busy) return;
+    recordAnswer(queue[qIndex], right); refreshFlashProgress(); dismissCard(right);
+  }
+  function advanceCard(){ if(cardState!=='continue'||busy) return; dismissCard(false); }
+  function refreshFlashProgress(){
+    $('flashFill').style.width = `${((qIndex+1)/queue.length)*100}%`;
+    $('flashCount').textContent = `${Math.min(qIndex+1,queue.length)}/${queue.length}`;
+  }
+  function dismissCard(positive){
+    busy=true;
+    const top=topCard();
+    top.classList.add(positive?'swipe-right':'swipe-left');
+    setTimeout(nextCard, RM?10:360);
+  }
+  function nextCard(){
+    qIndex++;
+    if(qIndex>=queue.length){ showSummary('flashcard'); return; }
+    setCardState('front'); mountStack(); busy=false;
+    setProgress($('flashFill'), $('flashCount'));
+  }
+
+  $('commitBtns').addEventListener('click', e=>{ const b=e.target.closest('.rate-btn'); if(b) commit(b.dataset.act); });
+  $('confirmBtns').addEventListener('click', e=>{ const b=e.target.closest('.rate-btn'); if(b) verify(b.dataset.act==='right'); });
+  $('continueBtn').addEventListener('click', advanceCard);
+
+  /* =====================================================================
+     QUIZ MODES (translate + write) — typed answer
+     ===================================================================== */
+  let quizState='answering';
+  function normalize(s){
+    let o=String(s||'').toLowerCase().trim();
+    o=o.replace(/[āáǎà]/g,'a').replace(/[ēéěè]/g,'e').replace(/[īíǐì]/g,'i')
+       .replace(/[ōóǒò]/g,'o').replace(/[ūúǔù]/g,'u').replace(/[ǖǘǚǜ]/g,'u').replace(/ü/g,'u');
+    o=o.replace(/[1-5]/g,'').replace(/[\s'’·,.。，、!！?？]/g,'').replace(/v/g,'u');
+    return o;
+  }
+  function wordPinyinPlain(w){ return w.pinyin.map(p=>p[0]).join(''); }
+  function checkAnswer(w, typed){
+    const compact = typed.replace(/[\s。！？!?，,]/g,'');
+    if(mode==='write') return compact === w.chars.join('');
+    const n=normalize(typed); if(!n) return false;
+    if(n===normalize(wordPinyinPlain(w))) return true;   // pinyin match (tone-lenient)
+    if(compact===w.chars.join('')) return true;          // exact hanzi also accepted
+    return false;
+  }
+
+  function startQuiz(){
+    showSection('quizSession');
+    setProgress($('quizFill'), $('quizCount'));
+    renderQuiz();
+  }
+  function renderQuiz(){
+    quizState='answering';
+    const w=queue[qIndex];
+    const card=$('quizCard'), input=$('quizInput'), hint=$('quizHint');
+    card.classList.remove('is-correct','is-wrong');
+    input.classList.remove('is-correct','is-wrong');
+    input.disabled=false; input.value=''; $('quizFeedback').innerHTML='';
+    $('quizCheck').style.display='block'; $('quizReveal').style.display='block'; $('quizNext').style.display='none';
+    setProgress($('quizFill'), $('quizCount'));
+
+    $('quizPrompt').className='quiz-prompt is-english';
+    $('quizPrompt').textContent=w.meaning;
+    if(mode==='translate'){
+      $('quizLabel').textContent='Translate to Chinese (pinyin)';
+      hint.textContent = `${w.chars.length} character${w.chars.length>1?'s':''}`;
+      input.placeholder='Type pinyin, e.g. piàoliang or piaoliang';
+    } else {
+      $('quizLabel').textContent='Write the characters';
+      hint.innerHTML = '<span class="pin">'+w.pinyin.map(([p,t])=>`<span style="color:${toneVar(t)}">${esc(p)}</span>`).join(' ')+'</span>';
+      input.placeholder='Type the hanzi characters';
+    }
+    setTimeout(()=>input.focus(), 50);
+  }
+  function submitQuiz(){
+    if(quizState!=='answering'||busy) return;
+    const w=queue[qIndex], typed=$('quizInput').value.trim();
+    if(!typed){ $('quizInput').focus(); return; }
+    gradeQuiz(w, checkAnswer(w,typed), false);
+  }
+  function revealQuiz(){ if(quizState!=='answering'||busy) return; gradeQuiz(queue[qIndex], false, true); }
+
+  function gradeQuiz(w, ok, revealed){
+    quizState='revealed';
+    const card=$('quizCard'), input=$('quizInput');
+    input.disabled=true;
+    card.classList.add(ok?'is-correct':'is-wrong');
+    input.classList.add(ok?'is-correct':'is-wrong');
+    recordAnswer(w, ok);
+    $('quizFill').style.width = `${((qIndex+1)/queue.length)*100}%`;
+
+    const pinyin = w.pinyin.map(([p,t])=>`<span style="color:${toneVar(t)}">${esc(p)}</span>`).join('');
+    // feedback integrity: a revealed answer never shows a green "Correct"
+    const verdict = ok
+      ? '<div class="quiz-verdict ok">✓ Correct</div>'
+      : `<div class="quiz-verdict ${revealed?'revealed':'no'}">${revealed?'Answer revealed':'✗ Not quite'}</div>`;
+    $('quizFeedback').innerHTML = `${verdict}
+      <div class="fb-answer">
+        <span class="fb-label">Correct answer</span>
+        <div class="fb-hanzi">${w.chars.join('')}</div>
+        <div class="fb-pinyin">${pinyin}</div>
+        <div class="fb-meaning">${esc(w.meaning)}</div>
+      </div>`;
+    announce(`${ok?'Correct':revealed?'Answer revealed':'Not quite'}. ${w.chars.join('')}, ${wordPinyinPlain(w)} — ${w.meaning}`);
+    $('quizCheck').style.display='none'; $('quizReveal').style.display='none';
+    const next=$('quizNext'); next.style.display='block';
+    next.textContent = qIndex>=queue.length-1 ? 'See results' : 'Continue';
+    setTimeout(()=>next.focus(), 60);
+  }
+  function nextQuiz(){
+    qIndex++;
+    if(qIndex>=queue.length){ showSummary('quiz'); return; }
+    renderQuiz();
+  }
+  $('quizCheck').addEventListener('click', submitQuiz);
+  $('quizReveal').addEventListener('click', revealQuiz);
+  $('quizNext').addEventListener('click', nextQuiz);
+  $('quizInput').addEventListener('keydown', e=>{ if(e.key==='Enter'){ e.preventDefault(); submitQuiz(); }});
+
+  /* =====================================================================
+     SHARED SUMMARY
+     ===================================================================== */
+  function showSummary(kind){
+    const posLabel = kind==='flashcard' ? 'knew it' : 'correct';
+    const total = results.correct + results.incorrect;
+    const pct = total ? Math.round(results.correct/total*100) : 0;
+    $('summaryZh').textContent = pct>=80 ? '棒' : pct>=50 ? '好' : '加油';
+    $('summaryStats').innerHTML = `
+      <div class="summary-stat"><b style="color:var(--green)">${results.correct}</b><span>${posLabel}</span></div>
+      <div class="summary-stat"><b style="color:var(--red)">${results.incorrect}</b><span>missed</span></div>
+      <div class="summary-stat"><b style="color:var(--pink)">${pct}%</b><span>accuracy</span></div>`;
+    showSection('summary');
+    burstConfetti();
+  }
+  function burstConfetti(){
+    if(RM) return;
+    const host=document.querySelector('.study-summary'); if(!host) return;
+    const palette=['#FF4B91','#FF72A9','#D93678','#FFD1E2','#FF8BBA','#FFC800'];
+    for(let i=0;i<24;i++){
+      const p=document.createElement('span'); p.className='confetti-piece';
+      p.style.background=palette[i%palette.length]; host.appendChild(p);
+      const angle=(Math.random()*Math.PI)-Math.PI/2-Math.PI/4;
+      const dist=90+Math.random()*140;
+      p.animate([
+        { transform:'translate(0,0) scale(1) rotate(0deg)', opacity:1 },
+        { transform:`translate(${Math.cos(angle)*dist}px, ${Math.sin(angle)*dist*1.15+60}px) scale(.4) rotate(${(Math.random()-0.5)*540}deg)`, opacity:0 }
+      ], { duration:900+Math.random()*500, easing:'cubic-bezier(0,0,0.2,1)', fill:'forwards' })
+       .onfinish = ()=>p.remove();
+    }
+  }
+
+  /* ---------- keyboard for flashcards ---------- */
+  window.addEventListener('keydown', e=>{
+    if($('flashSession').hidden) return;
+    if(e.repeat) return;
+    if(cardState==='front'){ if(e.key==='1') commit('know'); if(e.key==='2') commit('dont'); }
+    else if(cardState==='confirm'){ if(e.key==='1') verify(true); if(e.key==='2') verify(false); }
+    else if(cardState==='continue'){ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); advanceCard(); } }
+  });
+
+  /* ---------- boot ---------- */
+  if(!WORDS.length){
+    $('setup').innerHTML = '<div class="empty-note">Couldn\'t load the HSK curriculum data.<br>Open this file alongside <code>hanzika_hsk_data.js</code> and <code>hanzika_hsk_study_data.js</code> (serve the folder over http).</div>';
+  } else {
+    renderSetup();
+  }
+})();
+</script>
+</body>
+</html>
