@@ -653,10 +653,11 @@ if(typeof gsap === 'undefined'){
   .rate-btn[data-act="know"]:hover, .rate-btn[data-act="right"]:hover{ background:var(--green-bg); }
   .rate-btn[data-act="know"]:active, .rate-btn[data-act="right"]:active{ box-shadow:0 0 0 var(--green); }
   .rate-btn[data-act="know"] .rate-label, .rate-btn[data-act="right"] .rate-label{ color:var(--green-dk); }
-  .rate-btn[data-act="dont"], .rate-btn[data-act="wrong"]{ border-color:var(--red); box-shadow:0 4px 0 var(--red); }
-  .rate-btn[data-act="dont"]:hover, .rate-btn[data-act="wrong"]:hover{ background:var(--red-bg); }
-  .rate-btn[data-act="dont"]:active, .rate-btn[data-act="wrong"]:active{ box-shadow:0 0 0 var(--red); }
-  .rate-btn[data-act="dont"] .rate-label, .rate-btn[data-act="wrong"] .rate-label{ color:var(--red-dk); }
+  .rate-btn[data-act="dont"], .rate-btn[data-act^="wrong-"]{ border-color:var(--red); box-shadow:0 4px 0 var(--red); }
+  .rate-btn[data-act="dont"]:hover, .rate-btn[data-act^="wrong-"]:hover{ background:var(--red-bg); }
+  .rate-btn[data-act="dont"]:active, .rate-btn[data-act^="wrong-"]:active{ box-shadow:0 0 0 var(--red); }
+  .rate-btn[data-act="dont"] .rate-label, .rate-btn[data-act^="wrong-"] .rate-label{ color:var(--red-dk); }
+  .rate-btn.is-hidden{ display:none; }
 
   /* per-word strength + accuracy in vocab rows */
   .strength{ display:flex; gap:3px; align-items:center; }
@@ -2014,7 +2015,8 @@ if(typeof gsap === 'undefined'){
           </div>
           <div class="ratings" id="confirmBtns" style="display:none;">
             <button class="rate-btn" data-act="right"><span class="rate-label">I was right</span><span class="rate-key">1</span></button>
-            <button class="rate-btn" data-act="wrong"><span class="rate-label">I was wrong</span><span class="rate-key">2</span></button>
+            <button class="rate-btn" data-act="wrong-word"><span class="rate-label">Got the word wrong</span><span class="rate-key">2</span></button>
+            <button class="rate-btn" data-act="wrong-tone"><span class="rate-label">Got the tone wrong</span><span class="rate-key">3</span></button>
           </div>
           <button class="btn btn-primary" id="continueBtn" style="display:none; width:100%;">Continue</button>
         </div>
@@ -3137,7 +3139,10 @@ const Store = (() => {
   // binary review: knew it or didn't. Updates strength, accuracy, streak,
   // and schedules the next due date. This is the single write-path all
   // study modes use, and the seam for a future FSRS-grade scheduler.
-  function reviewVocab(id, knew){
+  // missReason ('word' | 'tone' | null) only applies when knew is false — a
+  // tone-only miss means the character/meaning is still solid, so it gets a
+  // lighter box penalty than forgetting the word outright.
+  function reviewVocab(id, knew, missReason = null){
     const w = vocab.find(w => w.id === id);
     if(!w) return;
     const st = w.stats;
@@ -3149,17 +3154,17 @@ const Store = (() => {
       st.dueAt = Date.now() + INTERVALS[st.box] * DAY;
     } else {
       st.streak = 0;
-      st.box = Math.max(0, st.box - 2);
+      st.box = Math.max(0, st.box - (missReason === 'tone' ? 1 : 2));
       st.dueAt = Date.now(); // due again immediately
     }
     st.lastReviewedAt = Date.now();
-    reviewLog.push({ ts: Date.now(), knew });
+    reviewLog.push({ ts: Date.now(), knew, missReason });
     const uid = authUser.id;
     queueWrite(`vocab_stats:${id}`, () => supa.from('vocab_stats').upsert({
       user_id: uid, word_id: id, box: st.box, seen: st.seen, correct: st.correct, streak: st.streak,
       due_at: new Date(st.dueAt).toISOString(), last_reviewed_at: new Date(st.lastReviewedAt).toISOString(),
     }).then(({ error }) => { if(error) console.error('reviewVocab stats upsert failed:', error); }));
-    supa.from('review_log').insert({ user_id: uid, word_id: id, knew }).then(({ error }) => { if(error) console.error('review_log insert failed:', error); });
+    supa.from('review_log').insert({ user_id: uid, word_id: id, knew, miss_reason: missReason }).then(({ error }) => { if(error) console.error('review_log insert failed:', error); });
   }
 
   // deck-level accuracy over calendar windows — dense enough to be meaningful
@@ -4566,6 +4571,7 @@ let studyHskMenuOpen = false;
 let initialRoundSize = 0;
 let queue = [], qIndex = 0, busy = false;
 let cardState = 'front'; // 'front' | 'confirm' | 'continue'
+let confirmFromKnow = true; // which commit() path led into 'confirm' — controls whether "I was right" is offered
 // unified results across all modes: did you know it or not
 let sessionResults = { correct:0, incorrect:0 };
 let quizState = 'answering'; // 'answering' | 'revealed'
@@ -4834,17 +4840,21 @@ function startFlashcards(){
   gsap.from('.card', { y:30, opacity:0, scale:0.94, duration:0.4*D, ease:"power3.out", stagger:0.06*D, onComplete:layoutStack });
 }
 
-// control panel state machine: front (commit) -> confirm/continue (after reveal)
+// control panel state machine: front (commit) -> confirm (after reveal) -> continue (after a miss, to give study time)
 function setCardState(state){
   cardState = state;
   const hintText = document.getElementById('flipHintText');
   document.getElementById('commitBtns').style.display  = state === 'front'    ? 'flex' : 'none';
   document.getElementById('confirmBtns').style.display = state === 'confirm'  ? 'flex' : 'none';
   document.getElementById('continueBtn').style.display = state === 'continue' ? 'block' : 'none';
+  // "I was right" only makes sense when this reveal followed claiming "I know it" —
+  // hide it on the "Not yet" path, where the only real question is what was missed.
+  document.querySelector('#confirmBtns .rate-btn[data-act="right"]')
+    ?.classList.toggle('is-hidden', !(state === 'confirm' && confirmFromKnow));
   const hint = document.getElementById('flipHint');
   hint.style.display = state === 'continue' ? 'none' : 'flex';
   if(state === 'front')   hintText.textContent = 'Do you recognize this word?';
-  if(state === 'confirm') hintText.textContent = 'Be honest — did you actually know it?';
+  if(state === 'confirm') hintText.textContent = confirmFromKnow ? 'Be honest — did you actually know it?' : 'What did you get wrong?';
   const btns = state === 'front' ? '#commitBtns .rate-btn' : state === 'confirm' ? '#confirmBtns .rate-btn' : '#continueBtn';
   gsap.fromTo(btns, { opacity:0, y:12, scale:0.92 }, { opacity:1, y:0, scale:1, duration:0.3*D, stagger:0.05*D, ease:"back.out(2)" });
 }
@@ -4943,7 +4953,9 @@ function bindTopCard(){
     if(!dragging) return;
     dragging = false;
     const dx = e.clientX - px;
-    if(cardState === 'confirm' && Math.abs(dx) > 110){ verify(dx >= 0); return; }
+    // drag-to-verify only maps cleanly to the binary "know it" self-check;
+    // the "not yet" miss-reason choice needs an explicit tap on which button.
+    if(cardState === 'confirm' && confirmFromKnow && Math.abs(dx) > 110){ verify(dx >= 0, dx >= 0 ? null : 'word'); return; }
     if(cardState === 'continue' && Math.abs(dx) > 110){ advanceCard(); return; }
     if(cardState !== 'front' && moved){ gsap.to(top, { x:0, rotation:0, duration:0.35*D, ease:"elastic.out(1,0.6)" }); return; }
     // tapping the front doesn't flip anymore — commit first. Nudge the buttons.
@@ -4973,28 +4985,31 @@ function flip(onDone){
     .to(seal, { opacity:1, scale:1, rotation:-6, duration:0.35*D, ease:"back.out(2.8)" }, 0.55);
 }
 
-// step 1: commit before seeing the answer
+// step 1: commit before seeing the answer — both paths reveal, then ask a
+// follow-up: "know it" asks you to self-verify, "not yet" asks what you
+// missed (both land in the same 'confirm' state, just with different options).
 function commit(act){
   if(cardState !== 'front' || busy) return;
-  if(act === 'know'){
-    // claimed recall — reveal, then ask them to verify honestly
-    flip(() => setCardState('confirm'));
+  confirmFromKnow = (act === 'know');
+  flip(() => setCardState('confirm'));
+}
+// step 2: self-verify against the reveal (from "know it"), or classify the
+// miss (from "not yet") — a correct answer dismisses immediately, a miss
+// pauses on 'continue' so there's time to actually study the reveal.
+function verify(wasRight, missReason = null){
+  if(cardState !== 'confirm' || busy) return;
+  if(wasRight){
+    recordAnswer(true);
+    dismissCard(true);
   } else {
-    // admitted miss — record it now, reveal for learning, then continue
-    recordAnswer(false);
-    flip(() => setCardState('continue'));
+    recordAnswer(false, missReason);
+    setCardState('continue');
   }
 }
-// step 2 (only after claiming "I know it"): self-verify against the reveal
-function verify(wasRight){
-  if(cardState !== 'confirm' || busy) return;
-  recordAnswer(wasRight);
-  dismissCard(wasRight);
-}
-function recordAnswer(knew){
+function recordAnswer(knew, missReason = null){
   if(knew) sessionResults.correct++;
   else { sessionResults.incorrect++; requeueCurrent(); }
-  Store.reviewVocab(queue[qIndex].id, knew);
+  Store.reviewVocab(queue[qIndex].id, knew, missReason);
   knew ? Sound.know() : Sound.fail();
   gsap.to('#studyProgressFill', { width:`${((qIndex+1)/queue.length)*100}%`, duration:0.5*D, ease:"back.out(1.2)" });
   gsap.fromTo('.study-progress', { scale:1 }, { scale:1.03, duration:0.12*D, yoyo:true, repeat:1, ease:"power2.out" });
@@ -5237,16 +5252,23 @@ function burstConfetti(){
   }
 }
 
-// flashcard keyboard: 1/2 map to the visible pair; Enter/Space continue
+// flashcard keyboard: 1/2 map to the visible pair; Enter/Space continue.
+// Bails out while typing anywhere (e.g. the assistant panel's textarea) so
+// "1"/"2"/space don't get hijacked as flashcard shortcuts mid-sentence.
+function isTypingTarget(el){
+  return el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable);
+}
 window.addEventListener('keydown', e => {
   if(currentView !== 'study' || document.getElementById('studySession').style.display === 'none') return;
+  if(isTypingTarget(document.activeElement)) return;
   if(e.repeat) return;
   if(cardState === 'front'){
     if(e.key === '1') commit('know');
     if(e.key === '2') commit('dont');
   } else if(cardState === 'confirm'){
-    if(e.key === '1') verify(true);
-    if(e.key === '2') verify(false);
+    if(e.key === '1' && confirmFromKnow) verify(true);
+    if(e.key === '2') verify(false, 'word');
+    if(e.key === '3') verify(false, 'tone');
   } else if(cardState === 'continue'){
     if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); advanceCard(); }
   }
@@ -5257,7 +5279,9 @@ document.getElementById('commitBtns').addEventListener('click', e => {
 });
 document.getElementById('confirmBtns').addEventListener('click', e => {
   const btn = e.target.closest('.rate-btn');
-  if(btn) verify(btn.dataset.act === 'right');
+  if(!btn) return;
+  if(btn.dataset.act === 'right') verify(true);
+  else verify(false, btn.dataset.act === 'wrong-tone' ? 'tone' : 'word');
 });
 document.getElementById('continueBtn').addEventListener('click', advanceCard);
 
