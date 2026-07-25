@@ -7,7 +7,20 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=LXGW+WenKai:wght@500;700&family=Nunito:wght@600;700;800;900&family=Noto+Sans+SC:wght@500;700;900&display=swap" rel="stylesheet">
+<script src="https://browser.sentry-cdn.com/8.9.2/bundle.min.js" crossorigin="anonymous"></script>
+<script>
+// Loaded first, before anything else can throw. Ad blockers commonly block
+// Sentry's CDN — guard the same way the GSAP fallback below does, so a
+// blocked monitoring script never breaks the app itself.
+if(typeof Sentry !== 'undefined'){
+  Sentry.init({
+    dsn: 'https://6b14647057df6c2f0a1decb7444c7621@o4511793820336128.ingest.de.sentry.io/4511793835868240',
+    environment: location.hostname === 'localhost' ? 'development' : 'production',
+  });
+}
+</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script>
 // Resilience: if the GSAP CDN is unreachable (offline, blocked network),
 // fall back to a no-op animation shim so the app still works — transitions
@@ -1799,7 +1812,7 @@ if(typeof gsap === 'undefined'){
     </form>
     <button class="btn btn-ghost" id="demoBtn">Try the demo account</button>
 
-    <p class="auth-note">Prototype only — accounts and progress live in this browser tab and reset on refresh. A real login and database come later.</p>
+    <p class="auth-note">Your account and progress are saved to the cloud and sync across devices.</p>
   </div>
 </section>
 
@@ -2886,83 +2899,246 @@ function starterVocab(){
   ]);
 }
 
+/* =====================================================================
+   STORE — backed by Supabase (Postgres + Auth + RLS). Real persistence,
+   real accounts. Reads stay synchronous against an in-memory cache
+   (populated on login/signup and kept current locally); writes fire the
+   Supabase call in the background and update the cache immediately so
+   every existing call site — almost all written against a synchronous
+   Store — keeps working unchanged. Only login/signup/logout are async,
+   because the UI must wait for them before rendering the app shell.
+   ===================================================================== */
+// Dev/prod split: local testing (including the Playwright suite) stays on
+// the original project so it never touches real user data; the deployed
+// site uses its own, separate production project. Same detection pattern
+// already used for Sentry's environment tag below.
+const IS_LOCAL_DEV = ['localhost', '127.0.0.1'].includes(location.hostname);
+const SUPABASE_URL = IS_LOCAL_DEV
+  ? 'https://wnryfjwklxdzfjmlqlig.supabase.co'
+  : 'https://vertgsgbmtvopwqtigty.supabase.co';
+const SUPABASE_ANON_KEY = IS_LOCAL_DEV
+  ? 'sb_publishable_p2-fHeqrSqQcEYWdXRvJOA_hh95i4u-'
+  : 'sb_publishable_Wvh11Vb64FxHavrKNtsTew_BCt9nuPl';
+const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+// Background writes to the same row (e.g. two rapid reviews of the same word)
+// fire concurrently and can arrive at Postgres out of order, so a later upsert
+// carrying stale cache state can silently overwrite a newer one. Queueing by
+// row key makes same-row writes wait for the previous one before sending,
+// without blocking the caller (still fire-and-forget from the UI's view).
+// Resolves (never rejects) with {ok, error} — existing fire-and-forget call
+// sites can keep ignoring the return value with no "uncaught rejection"
+// noise, while a caller that needs certainty (e.g. don't navigate away until
+// a delete really landed) can await it and check .ok.
+const _writeQueues = new Map();
+function queueWrite(key, fn){
+  const prev = _writeQueues.get(key) || Promise.resolve();
+  const next = prev.then(async () => {
+    try { await fn(); return { ok:true }; }
+    catch(error){ console.error('queueWrite failed:', key, error); return { ok:false, error }; }
+  });
+  _writeQueues.set(key, next);
+  return next;
+}
+
 const Store = (() => {
-  const users = [
-    { id:'demo', name:'Ilham', email:'demo@hanzika.app', password:'demo1234', joined: now - 44*DAY, sessionsCompleted: 7, lastStudied: now - 1*DAY },
-  ];
-  const vocabByUser = { demo: demoVocab() };
-  const reviewLogByUser = { demo: demoLog(vocabByUser.demo) };
-  const completionKey = 'hanzika_round_completions_v1';
-  let completionByUser = {};
-  try { completionByUser = JSON.parse(localStorage.getItem(completionKey) || '{}'); } catch(e){}
-  let session = null;
+  let authUser = null;   // supabase auth user object
+  let profile = null;    // { id, name, sessionsCompleted, lastStudied, joined }
+  let vocab = [];         // app-shaped word objects, cached in memory
+  let reviewLog = [];      // [{ ts, knew }]
+  let completionDays = {}; // { 'YYYY-MM-DD': { rounds, words, activities:[] } }
 
   function isValidEmail(v){ return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v); }
+  function localDateKey(ts = Date.now()){
+    const d = new Date(ts);
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  }
 
-  function login(email, password){
-    const u = users.find(u => u.email.toLowerCase() === email.toLowerCase());
-    if(!u || u.password !== password) return { ok:false, error:'Incorrect email or password.' };
-    session = u.id;
+  function dbRowToWord(row, statsRow){
+    const st = statsRow || {};
+    const examples = Array.isArray(row.examples) ? row.examples : [];
+    return {
+      id: row.id,
+      chars: row.chars,
+      pinyin: row.pinyin,
+      meaning: row.meaning,
+      exZh: examples[0]?.zh || '',
+      exEn: examples[0]?.en || '',
+      examples,
+      hsk: row.hsk_level,
+      hskChapter: row.hsk_chapter,
+      tags: row.tags || [],
+      source: row.source,
+      image: row.image_url,
+      _ownerId: row.owner_id,
+      stats: {
+        box: st.box ?? 0,
+        seen: st.seen ?? 0,
+        correct: st.correct ?? 0,
+        streak: st.streak ?? 0,
+        addedAt: st.added_at ? new Date(st.added_at).getTime() : new Date(row.created_at).getTime(),
+        lastReviewedAt: st.last_reviewed_at ? new Date(st.last_reviewed_at).getTime() : null,
+        dueAt: st.due_at ? new Date(st.due_at).getTime() : Date.now(),
+      },
+    };
+  }
+
+  function activityRowToEntry(row){
+    return {
+      id: row.id,
+      ts: new Date(row.ts).getTime(),
+      kind: row.kind,
+      mode: row.mode,
+      modeLabel: row.mode_label,
+      scopeLabel: row.scope_label,
+      itemCount: row.item_count,
+      unit: row.unit,
+      correct: row.correct,
+      incorrect: row.incorrect,
+      accuracy: row.accuracy,
+    };
+  }
+
+  function clearCache(){
+    authUser = null; profile = null; vocab = []; reviewLog = []; completionDays = {};
+  }
+
+  async function loadUserData(user){
+    authUser = user;
+    const uid = user.id;
+    const [profileRes, wordsRes, statsRes, logRes, activitiesRes] = await Promise.all([
+      supa.from('profiles').select('*').eq('id', uid).maybeSingle(),
+      supa.from('vocab_words').select('*'),
+      supa.from('vocab_stats').select('*').eq('user_id', uid),
+      supa.from('review_log').select('ts,knew').eq('user_id', uid).order('ts', { ascending: true }),
+      supa.from('activities').select('*').eq('user_id', uid).order('ts', { ascending: true }),
+    ]);
+    const p = profileRes.data || { id: uid, name: user.email.split('@')[0], sessions_completed: 0, last_studied_at: null, created_at: new Date().toISOString() };
+    profile = {
+      id: p.id, name: p.name, email: user.email,
+      joined: new Date(p.created_at).getTime(),
+      sessionsCompleted: p.sessions_completed,
+      lastStudied: p.last_studied_at ? new Date(p.last_studied_at).getTime() : null,
+    };
+    const statsByWord = new Map((statsRes.data || []).map(s => [s.word_id, s]));
+    vocab = (wordsRes.data || []).map(row => dbRowToWord(row, statsByWord.get(row.id))).sort((a,b) => b.stats.addedAt - a.stats.addedAt);
+    reviewLog = (logRes.data || []).map(r => ({ ts: new Date(r.ts).getTime(), knew: r.knew }));
+    completionDays = {};
+    (activitiesRes.data || []).forEach(row => {
+      const rec = (completionDays[row.activity_date] ||= { rounds:0, words:0, activities:[] });
+      rec.rounds += 1;
+      rec.words += row.item_count;
+      rec.activities.push(activityRowToEntry(row));
+    });
+  }
+
+  async function login(email, password){
+    const { data, error } = await supa.auth.signInWithPassword({ email, password });
+    if(error) return { ok:false, error: 'Incorrect email or password.' };
+    await loadUserData(data.user);
     return { ok:true };
   }
 
-  function signup(name, email, password){
-    if(users.some(u => u.email.toLowerCase() === email.toLowerCase())){
-      return { ok:false, error:'An account with this email already exists.' };
+  // Supabase keeps the session token in localStorage across reloads on its
+  // own, but nothing checks for it on page load — call this once at startup
+  // so a returning user with a still-valid session skips the login screen.
+  async function restoreSession(){
+    const { data } = await supa.auth.getSession();
+    if(!data.session) return false;
+    await loadUserData(data.session.user);
+    return true;
+  }
+
+  async function signup(name, email, password){
+    const { data, error } = await supa.auth.signUp({ email, password, options: { data: { name }, emailRedirectTo: window.location.href } });
+    if(error) return { ok:false, error: error.message.includes('already registered') ? 'An account with this email already exists.' : error.message };
+    if(!data.session){
+      return { ok:false, error: 'Account created — check your email to confirm, then log in.' };
     }
-    const id = 'u_' + Math.random().toString(36).slice(2,9);
-    users.push({ id, name, email, password, joined: Date.now(), sessionsCompleted:0, lastStudied:null });
-    vocabByUser[id] = starterVocab();
-    reviewLogByUser[id] = [];
-    completionByUser[id] = {};
-    session = id;
+    await loadUserData(data.user);
     return { ok:true };
   }
 
-  function logout(){ session = null; }
-  function isAuthed(){ return !!session; }
-  function currentUser(){ return users.find(u => u.id === session) || null; }
-  function getVocab(){ return session ? vocabByUser[session] : []; }
+  async function logout(){
+    await supa.auth.signOut();
+    clearCache();
+  }
+
+  function isAuthed(){ return !!authUser; }
+  function currentUser(){ return profile; }
+  function getVocab(){ return authUser ? vocab : []; }
 
   function addVocab(entry){
-    entry.id = 'w_' + Math.random().toString(36).slice(2,9);
-    entry.image = entry.image || null;
-    entry.stats = { box:0, seen:0, correct:0, streak:0, addedAt: Date.now(), lastReviewedAt:null, dueAt: Date.now() };
-    vocabByUser[session].unshift(entry);
-    return entry;
+    const id = crypto.randomUUID();
+    const examples = entry.exZh ? [{ zh: entry.exZh, en: entry.exEn || '' }] : [];
+    const word = {
+      id, chars: entry.chars, pinyin: entry.pinyin, meaning: entry.meaning,
+      exZh: entry.exZh || '', exEn: entry.exEn || '', examples,
+      hsk: entry.hsk ?? null, hskChapter: null, tags: entry.tags || [],
+      source: 'custom', image: entry.image || null, _ownerId: authUser.id,
+      stats: { box:0, seen:0, correct:0, streak:0, addedAt: Date.now(), lastReviewedAt:null, dueAt: Date.now() },
+    };
+    vocab.unshift(word);
+    // Exposed as ._persisted (without changing this function's synchronous
+    // return shape) so a caller that needs certainty the write actually
+    // landed — e.g. before navigating away — can await it.
+    word._persisted = queueWrite(`vocab_words:${id}`, () => supa.from('vocab_words').insert({
+      id, owner_id: authUser.id, chars: entry.chars, pinyin: entry.pinyin, meaning: entry.meaning,
+      source: 'custom', hsk_level: entry.hsk ?? null, tags: entry.tags || [], examples, image_url: entry.image || null,
+    }).then(({ error }) => { if(error) throw error; }));
+    return word;
   }
+
   function importVocab(entries){
-    // entries: array of parsed word objects. Skips exact duplicates (same chars
-    // already in the deck). Returns { added, skipped }.
-    const existing = new Set(vocabByUser[session].map(w => w.chars.join('')));
+    const existing = new Set(vocab.map(w => w.chars.join('')));
     let added = 0, skipped = 0;
-    const base = Date.now();
-    entries.forEach((entry, i) => {
+    const rows = [];
+    entries.forEach(entry => {
       const key = entry.chars.join('');
       if(existing.has(key)){ skipped++; return; }
       existing.add(key);
-      entry.id = 'w_' + Math.random().toString(36).slice(2,9);
-      entry.image = entry.image || null;
-      // stagger addedAt slightly so "recently added" ordering is stable
-      entry.stats = { box:0, seen:0, correct:0, streak:0, addedAt: base - i, lastReviewedAt:null, dueAt: base };
-      vocabByUser[session].unshift(entry);
+      const id = crypto.randomUUID();
+      const examples = entry.exZh ? [{ zh: entry.exZh, en: entry.exEn || '' }] : (entry.examples || []);
+      const word = {
+        id, chars: entry.chars, pinyin: entry.pinyin, meaning: entry.meaning,
+        exZh: entry.exZh || examples[0]?.zh || '', exEn: entry.exEn || examples[0]?.en || '', examples,
+        hsk: entry.hsk ?? null, hskChapter: null, tags: entry.tags || [],
+        source: 'custom', image: entry.image || null, _ownerId: authUser.id,
+        stats: { box:0, seen:0, correct:0, streak:0, addedAt: Date.now(), lastReviewedAt:null, dueAt: Date.now() },
+      };
+      vocab.unshift(word);
+      rows.push({ id, owner_id: authUser.id, chars: entry.chars, pinyin: entry.pinyin, meaning: entry.meaning,
+        source: 'custom', hsk_level: entry.hsk ?? null, tags: entry.tags || [], examples, image_url: entry.image || null });
       added++;
     });
+    if(rows.length) supa.from('vocab_words').insert(rows).then(({ error }) => { if(error) console.error('importVocab failed:', error); });
     return { added, skipped };
   }
+
   function updateVocab(id, patch){
-    const w = vocabByUser[session].find(w => w.id === id);
-    if(w) Object.assign(w, patch);
+    const w = vocab.find(w => w.id === id);
+    if(!w) return;
+    Object.assign(w, patch);
+    if(patch.exZh !== undefined || patch.exEn !== undefined){
+      w.examples = w.exZh ? [{ zh: w.exZh, en: w.exEn || '' }] : [];
+    }
+    w._persisted = queueWrite(`vocab_words:${id}`, () => supa.from('vocab_words').update({
+      chars: w.chars, pinyin: w.pinyin, meaning: w.meaning, hsk_level: w.hsk, tags: w.tags,
+      examples: w.examples, image_url: w.image,
+    }).eq('id', id).then(({ error }) => { if(error) throw error; }));
     return w;
   }
+
   function deleteVocab(id){
-    vocabByUser[session] = vocabByUser[session].filter(w => w.id !== id);
+    vocab = vocab.filter(w => w.id !== id);
+    return queueWrite(`vocab_words:${id}`, () => supa.from('vocab_words').delete().eq('id', id).then(({ error }) => { if(error) throw error; }));
   }
+
   // binary review: knew it or didn't. Updates strength, accuracy, streak,
   // and schedules the next due date. This is the single write-path all
   // study modes use, and the seam for a future FSRS-grade scheduler.
   function reviewVocab(id, knew){
-    const w = vocabByUser[session].find(w => w.id === id);
+    const w = vocab.find(w => w.id === id);
     if(!w) return;
     const st = w.stats;
     st.seen = (st.seen || 0) + 1;
@@ -2977,26 +3153,29 @@ const Store = (() => {
       st.dueAt = Date.now(); // due again immediately
     }
     st.lastReviewedAt = Date.now();
-    (reviewLogByUser[session] ||= []).push({ ts: Date.now(), knew });
+    reviewLog.push({ ts: Date.now(), knew });
+    const uid = authUser.id;
+    queueWrite(`vocab_stats:${id}`, () => supa.from('vocab_stats').upsert({
+      user_id: uid, word_id: id, box: st.box, seen: st.seen, correct: st.correct, streak: st.streak,
+      due_at: new Date(st.dueAt).toISOString(), last_reviewed_at: new Date(st.lastReviewedAt).toISOString(),
+    }).then(({ error }) => { if(error) console.error('reviewVocab stats upsert failed:', error); }));
+    supa.from('review_log').insert({ user_id: uid, word_id: id, knew }).then(({ error }) => { if(error) console.error('review_log insert failed:', error); });
   }
+
   // deck-level accuracy over calendar windows — dense enough to be meaningful
   function getReviewStats(){
-    const log = reviewLogByUser[session] || [];
     const nowTs = Date.now();
     const windows = { month: 30*DAY, quarter: 90*DAY, lifetime: Infinity };
     const out = {};
     for(const k in windows){
       const cut = windows[k] === Infinity ? -Infinity : nowTs - windows[k];
-      const ev = log.filter(e => e.ts >= cut);
+      const ev = reviewLog.filter(e => e.ts >= cut);
       const c = ev.filter(e => e.knew).length;
       out[k] = { n: ev.length, acc: ev.length ? Math.round(c / ev.length * 100) : null };
     }
     return out;
   }
-  function localDateKey(ts = Date.now()){
-    const d = new Date(ts);
-    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-  }
+
   function completeSession(activity = 0){
     const u = currentUser();
     if(!u) return null;
@@ -3009,9 +3188,9 @@ const Store = (() => {
     const accuracy = Number.isFinite(suppliedAccuracy)
       ? Math.max(0, Math.min(100, Math.round(suppliedAccuracy)))
       : (correct + incorrect ? Math.round(correct / (correct + incorrect) * 100) : null);
+    const id = crypto.randomUUID();
     const entry = {
-      id:`activity_${ts}_${Math.random().toString(36).slice(2,7)}`,
-      ts,
+      id, ts,
       kind:String(details.kind || 'study').slice(0,30),
       mode:String(details.mode || 'study').slice(0,30),
       modeLabel:String(details.modeLabel || 'Study round').slice(0,80),
@@ -3024,19 +3203,25 @@ const Store = (() => {
     };
     u.sessionsCompleted += 1; u.lastStudied = ts;
     const key = localDateKey(ts);
-    const days = (completionByUser[session] ||= {});
-    const rec = (days[key] ||= { rounds:0, words:0 });
-    rec.rounds = (Number(rec.rounds) || 0) + 1;
-    rec.words = (Number(rec.words) || 0) + itemCount;
-    if(!Array.isArray(rec.activities)) rec.activities = [];
+    const rec = (completionDays[key] ||= { rounds:0, words:0, activities:[] });
+    rec.rounds += 1;
+    rec.words += itemCount;
     rec.activities.push(entry);
-    try { localStorage.setItem(completionKey, JSON.stringify(completionByUser)); } catch(e){}
+    const uid = authUser.id;
+    supa.from('activities').insert({
+      id, user_id: uid, ts: new Date(ts).toISOString(), activity_date: key,
+      kind: entry.kind, mode: entry.mode, mode_label: entry.modeLabel, scope_label: entry.scopeLabel,
+      item_count: itemCount, unit: entry.unit, correct, incorrect, accuracy,
+    }).then(({ error }) => { if(error) console.error('completeSession activity insert failed:', error); });
+    queueWrite(`profiles:${uid}`, () => supa.from('profiles').update({ sessions_completed: u.sessionsCompleted, last_studied_at: new Date(ts).toISOString() }).eq('id', uid)
+      .then(({ error }) => { if(error) console.error('completeSession profile update failed:', error); }));
     return entry;
   }
-  function getCompletionDays(){ return completionByUser[session] || {}; }
+
+  function getCompletionDays(){ return completionDays; }
   function getTodayProgress(){ return getCompletionDays()[localDateKey()] || { rounds:0, words:0, activities:[] }; }
 
-  return { isValidEmail, login, signup, logout, isAuthed, currentUser, getVocab, addVocab, importVocab, updateVocab, deleteVocab, reviewVocab, getReviewStats, completeSession, getCompletionDays, getTodayProgress, localDateKey };
+  return { isValidEmail, login, signup, logout, restoreSession, isAuthed, currentUser, getVocab, addVocab, importVocab, updateVocab, deleteVocab, reviewVocab, getReviewStats, completeSession, getCompletionDays, getTodayProgress, localDateKey };
 })();
 
 /* =====================================================================
@@ -3381,7 +3566,7 @@ function clearFieldErrors(scope){
   scope.querySelectorAll('.field').forEach(f => f.classList.remove('has-error'));
 }
 
-authForm.addEventListener('submit', e => {
+authForm.addEventListener('submit', async e => {
   e.preventDefault();
   authError.classList.remove('is-visible');
   clearFieldErrors(authForm);
@@ -3396,39 +3581,68 @@ authForm.addEventListener('submit', e => {
   if(authMode === 'signup' && !name){ document.getElementById('fieldName').classList.add('has-error'); hasError = true; }
   if(hasError) return;
 
-  const result = authMode === 'signup' ? Store.signup(name, email, password) : Store.login(email, password);
+  const submitBtn = authForm.querySelector('button[type="submit"]');
+  if(submitBtn) submitBtn.disabled = true;
+  const result = authMode === 'signup' ? await Store.signup(name, email, password) : await Store.login(email, password);
+  if(submitBtn) submitBtn.disabled = false;
   if(!result.ok){
     authError.textContent = result.error;
     authError.classList.add('is-visible');
     return;
   }
+  HSKProgress.load(Store.currentUser().id);
   enterApp();
 });
 
-document.getElementById('demoBtn').addEventListener('click', () => {
-  const result = Store.login('demo@hanzika.app', 'demo1234');
-  if(result.ok) enterApp();
+document.getElementById('demoBtn').addEventListener('click', async () => {
+  const result = await Store.login('demo@hanzika.app', 'demo1234');
+  if(result.ok){ HSKProgress.load(Store.currentUser().id); enterApp(); }
+  else { authError.textContent = result.error; authError.classList.add('is-visible'); }
 });
+
+function showAppShell(){
+  const authView = document.getElementById('authView');
+  const appShell = document.getElementById('appShell');
+  authView.style.display = 'none';
+  appShell.hidden = false;
+  renderUserChrome();
+  const initialView = viewFromHash() || 'profile';
+  if(initialView !== 'profile'){
+    document.getElementById('view-profile').classList.remove('is-active');
+    document.getElementById('view-' + initialView).classList.add('is-active');
+    document.querySelectorAll('.nav-link, .tab-btn[data-view]').forEach(b => b.classList.toggle('is-active', b.dataset.view === initialView));
+    currentView = initialView;
+  }
+  renderCurrentView(currentView);
+  history.replaceState(null, '', '#/' + currentView);
+  AssistantChat?.onLogin();
+  // Resolve direct Wikimedia thumbnails in the background. The UI stays usable
+  // while links arrive, and cached results appear immediately next time.
+  WikimediaImages.hydrate(Store.getVocab(), (word) => refreshResolvedImage(word));
+  return appShell;
+}
 
 function enterApp(){
   const authView = document.getElementById('authView');
-  const appShell = document.getElementById('appShell');
   gsap.to(authView, {
     opacity:0, y:-12, duration:0.3*D, ease:"power2.in",
     onComplete:() => {
-      authView.style.display = 'none';
-      appShell.hidden = false;
-      renderUserChrome();
-      renderProfile(); // goToView('profile') early-returns when already current — render explicitly
-      goToView('profile');
-      AssistantChat?.onLogin();
-      // Resolve direct Wikimedia thumbnails in the background. The UI stays usable
-      // while links arrive, and cached results appear immediately next time.
-      WikimediaImages.hydrate(Store.getVocab(), (word) => refreshResolvedImage(word));
+      const appShell = showAppShell();
       gsap.from(appShell, { opacity:0, duration:0.35*D, ease:"power2.out" });
     }
   });
 }
+
+// Supabase persists the session token itself, but nothing checked for it on
+// load — restore it here so a returning user with a still-valid session
+// skips straight past the login screen instead of being asked to sign in again.
+(async () => {
+  const restored = await Store.restoreSession();
+  if(restored){
+    await HSKProgress.load(Store.currentUser().id);
+    showAppShell();
+  }
+})();
 
 function renderUserChrome(){
   const u = Store.currentUser();
@@ -3444,9 +3658,10 @@ function renderUserChrome(){
 }
 document.getElementById('profileTopBtn')?.addEventListener('click', () => goToView('profile'));
 
-function doLogout(){
+async function doLogout(){
   AssistantChat?.onLogout();
-  Store.logout();
+  await Store.logout();
+  HSKProgress.clear();
   const authView = document.getElementById('authView');
   const appShell = document.getElementById('appShell');
   appShell.hidden = true;
@@ -3460,9 +3675,28 @@ document.getElementById('logoutBtnProfile').addEventListener('click', doLogout);
 /* =====================================================================
    VIEW SWITCHING
    ===================================================================== */
+const VALID_VIEWS = ['profile','vocab','study','hsk'];
+function viewFromHash(){
+  const m = window.location.hash.match(/^#\/(\w+)/);
+  return (m && VALID_VIEWS.includes(m[1])) ? m[1] : null;
+}
+function renderCurrentView(view){
+  if(view === 'profile') renderProfile();
+  if(view === 'vocab') renderVocabList();
+  if(view === 'study') renderStudySetup();
+  if(view === 'hsk') renderHskHome();
+}
+
 let currentView = 'profile';
-function goToView(view){
-  if(view === currentView) return;
+// Hash-based routing: each tab gets a real, bookmarkable, back/forward-able
+// URL (#/profile, #/vocab, ...) without needing server-side rewrite rules —
+// works on any static host, including the local dev server.
+function goToView(view, { skipHistory=false } = {}){
+  const hash = '#/' + view;
+  if(view === currentView){
+    if(!skipHistory && window.location.hash !== hash) history.replaceState(null, '', hash);
+    return;
+  }
   if(currentView === 'hsk' && view !== 'hsk'){
     HskAlibabaAudio.stop();
     releaseHskTestLock();
@@ -3473,19 +3707,24 @@ function goToView(view){
 
   document.querySelectorAll('.nav-link, .tab-btn[data-view]').forEach(b => b.classList.toggle('is-active', b.dataset.view === view));
 
-  if(view === 'profile') renderProfile();
-  if(view === 'vocab') renderVocabList();
-  if(view === 'study') renderStudySetup();
-  if(view === 'hsk') renderHskHome();
+  renderCurrentView(view);
 
   gsap.to(outEl, { opacity:0, y:8, duration:0.18*D, ease:"power2.in", onComplete:()=>{
     outEl.classList.remove('is-active');
     inEl.classList.add('is-active');
     gsap.fromTo(inEl, { opacity:0, y:10 }, { opacity:1, y:0, duration:0.28*D, ease:"power2.out" });
   }});
+
+  if(!skipHistory && window.location.hash !== hash) history.pushState(null, '', hash);
 }
 document.querySelectorAll('.nav-link, .tab-btn[data-view]').forEach(btn => {
   btn.addEventListener('click', () => goToView(btn.dataset.view));
+});
+// Back/forward between tabs: the URL already changed by the time this fires,
+// so just sync the app state to it — skipHistory avoids re-pushing.
+window.addEventListener('popstate', () => {
+  if(!Store.isAuthed()) return;
+  goToView(viewFromHash() || 'profile', { skipHistory:true });
 });
 
 /* =====================================================================
@@ -3796,11 +4035,11 @@ document.getElementById('vocabList').addEventListener('click', e => {
 function deleteWordFlow(id, row){
   const word = Store.getVocab().find(w => w.id === id);
   if(!confirm(`Delete “${word.chars.join('')}” (${word.meaning})? This can't be undone.`)) return;
-  gsap.to(row, { opacity:0, x:-16, height:0, marginBottom:0, paddingTop:0, paddingBottom:0, duration:0.3*D, ease:"power2.in", onComplete:() => {
-    Store.deleteVocab(id);
+  gsap.to(row, { opacity:0, x:-16, height:0, marginBottom:0, paddingTop:0, paddingBottom:0, duration:0.3*D, ease:"power2.in", onComplete: async () => {
+    const result = await Store.deleteVocab(id);
     renderVocabList();
     renderProfile();
-    showToast(`Deleted ${word.chars.join('')}`);
+    showToast(result.ok ? `Deleted ${word.chars.join('')}` : `Couldn't delete ${word.chars.join('')} — check your connection and try again`);
   }});
 }
 
@@ -4253,7 +4492,7 @@ function updatePreview(){
   document.getElementById('previewMeaning').textContent = meaning || 'Your word preview';
 }
 
-document.getElementById('saveWordBtn').addEventListener('click', () => {
+document.getElementById('saveWordBtn').addEventListener('click', async () => {
   const chars = document.getElementById('fHanzi').value.trim();
   const meaning = document.getElementById('fMeaning').value.trim();
   let hasError = false;
@@ -4268,26 +4507,30 @@ document.getElementById('saveWordBtn').addEventListener('click', () => {
   const exZh = document.getElementById('fExZh').value.trim();
   const exEn = document.getElementById('fExEn').value.trim();
 
+  closeVocabModal();
+
   if(editingId){
-    const word = Store.getVocab().find(w => w.id === editingId);
-    Store.updateVocab(editingId, {
+    const word = Store.updateVocab(editingId, {
       chars: Array.from(chars), pinyin, meaning, exZh, exEn,
       hsk: hskVal ? parseInt(hskVal,10) : null,
       tags, image: pendingImage,
     });
-    showToast(`Saved changes to ${chars}`);
+    renderVocabList();
+    renderProfile();
+    const result = await word._persisted;
+    showToast(result.ok ? `Saved changes to ${chars}` : `Couldn't save changes to ${chars} — check your connection and try again`);
   } else {
-    Store.addVocab({
+    const word = Store.addVocab({
       chars: Array.from(chars), pinyin, meaning, exZh, exEn,
       hsk: hskVal ? parseInt(hskVal,10) : null,
       tags, image: pendingImage,
       source: 'custom',
     });
-    showToast(`Added ${chars} to your deck`);
+    renderVocabList();
+    renderProfile();
+    const result = await word._persisted;
+    showToast(result.ok ? `Added ${chars} to your deck` : `Couldn't add ${chars} — check your connection and try again`);
   }
-  closeVocabModal();
-  renderVocabList();
-  renderProfile();
 });
 
 document.getElementById('deleteWordBtn').addEventListener('click', () => {
@@ -5022,24 +5265,49 @@ document.getElementById('continueBtn').addEventListener('click', advanceCard);
    HSK CHAPTER STUDY — HSK 2 Chapters 1–15
    ===================================================================== */
 const HSKProgress = (() => {
-  const key = 'hanzika_hsk_progress_v1';
   let data = {};
-  try { data = JSON.parse(localStorage.getItem(key) || '{}') || {}; } catch(_){}
-  function userKey(){ return Store.currentUser()?.id || 'guest'; }
+  let uid = null;
+
   function chapter(id){
-    const user = (data[userKey()] ||= {});
-    const progress=(user[id] ||= { questions:{}, bestTest:0, testsCompleted:0, reviewsCompleted:0 });
-    progress.questions ||= {};
-    progress.testScores ||= {};
-    progress.testAttempts ||= {};
-    progress.materialRead = !!progress.materialRead;
+    const progress = (data[id] ||= { questions:{}, bestTest:0, testsCompleted:0, reviewsCompleted:0, testScores:{}, testAttempts:{}, materialRead:false });
     return progress;
   }
+
+  async function load(userId){
+    uid = userId;
+    data = {};
+    const [progRes, testRes, stateRes] = await Promise.all([
+      supa.from('hsk_progress').select('*').eq('user_id', userId),
+      supa.from('hsk_test_scores').select('*').eq('user_id', userId),
+      supa.from('hsk_chapter_state').select('*').eq('user_id', userId),
+    ]);
+    (progRes.data || []).forEach(row => {
+      chapter(row.chapter_id).questions[row.question_id] = { attempts: row.attempts, correct: row.correct, skill: row.skill };
+    });
+    (testRes.data || []).forEach(row => {
+      const progress = chapter(row.chapter_id);
+      progress.testScores[row.test_id] = row.best_score;
+      progress.testAttempts[row.test_id] = row.attempts;
+      progress.testsCompleted += row.attempts;
+      progress.bestTest = Math.max(progress.bestTest, row.best_score);
+    });
+    (stateRes.data || []).forEach(row => {
+      const progress = chapter(row.chapter_id);
+      progress.materialRead = row.material_read;
+      progress.reviewsCompleted = row.reviews_completed;
+    });
+  }
+
+  function clear(){ data = {}; uid = null; }
+
   function record(chapterId, question, correct){
     const progress = chapter(chapterId);
     const item = (progress.questions[question.id] ||= { attempts:0, correct:0, skill:question.skill });
     item.attempts++; if(correct) item.correct++;
-    save();
+    queueWrite(`hsk_progress:${chapterId}:${question.id}`, () => supa.from('hsk_progress').upsert({
+      user_id: uid, chapter_id: chapterId, question_id: question.id,
+      attempts: item.attempts, correct: item.correct, skill: question.skill,
+    }).then(({ error }) => { if(error) console.error('HSKProgress.record failed:', error); }));
   }
   function complete(chapterId, mode, score, testId=null){
     const progress = chapter(chapterId);
@@ -5049,18 +5317,26 @@ const HSKProgress = (() => {
       if(testId){
         progress.testScores[testId] = Math.max(progress.testScores[testId] || 0, score);
         progress.testAttempts[testId] = (progress.testAttempts[testId] || 0) + 1;
+        queueWrite(`hsk_test_scores:${chapterId}:${testId}`, () => supa.from('hsk_test_scores').upsert({
+          user_id: uid, chapter_id: chapterId, test_id: testId,
+          best_score: progress.testScores[testId], attempts: progress.testAttempts[testId],
+        }).then(({ error }) => { if(error) console.error('HSKProgress.complete test upsert failed:', error); }));
       }
-    } else progress.reviewsCompleted++;
-    save();
+    } else {
+      progress.reviewsCompleted++;
+      queueWrite(`hsk_chapter_state:${chapterId}`, () => supa.from('hsk_chapter_state').upsert({
+        user_id: uid, chapter_id: chapterId, material_read: progress.materialRead, reviews_completed: progress.reviewsCompleted,
+      }).then(({ error }) => { if(error) console.error('HSKProgress.complete reviews upsert failed:', error); }));
+    }
   }
   function setMaterialRead(chapterId, value){
-    chapter(chapterId).materialRead=!!value;
-    save();
+    const progress = chapter(chapterId);
+    progress.materialRead = !!value;
+    queueWrite(`hsk_chapter_state:${chapterId}`, () => supa.from('hsk_chapter_state').upsert({
+      user_id: uid, chapter_id: chapterId, material_read: progress.materialRead, reviews_completed: progress.reviewsCompleted,
+    }).then(({ error }) => { if(error) console.error('HSKProgress.setMaterialRead failed:', error); }));
   }
-  function save(){
-    try { localStorage.setItem(key, JSON.stringify(data)); } catch(_){}
-  }
-  return { chapter, record, complete, setMaterialRead };
+  return { chapter, record, complete, setMaterialRead, load, clear };
 })();
 
 const hskRoot = document.getElementById('hskRoot');

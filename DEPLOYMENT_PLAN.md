@@ -71,39 +71,72 @@ hsk_test_scores                     -- today: HSKProgress.chapter(id).testScores
 
 ## 3. Phased plan
 
-### Phase 0 — Foundation (before any backend code)
-- [ ] **Initialize a real, dedicated git repo for Hanzika** (currently has none of its own). Do this first — every later phase assumes real version control.
-- [ ] Confirm the stack decision (§6) — or accept the Supabase recommendation and move on.
-- [ ] Set up project accounts: hosting, database, error tracking (e.g. Sentry).
-- [ ] Decide launch scope: **ship the main app only.** Treat the Question Lab and full mocked "monthly report" redesign as design references / roadmap (`IMPROVEMENT_PROPOSALS.md`), not launch blockers.
+### Phase 0 — Foundation (before any backend code) ✅ done
+- [x] **Initialize a real, dedicated git repo for Hanzika** — done, pushed to `github.com/ilhampamn/hanzika`.
+- [x] Confirm the stack decision (§6) — Supabase, confirmed.
+- [x] Set up project accounts: database — Supabase project live. Sentry set up in Phase 4. **Correction**: hosting was never actually set up, despite this box previously being checked — see Phase 5 below, that's still fully open.
+- [x] Decide launch scope: **ship the main app only.**
 
-### Phase 1 — Schema & backend foundation
-- [ ] Create the real schema (§2) in Postgres; set up migrations (don't hand-edit prod schema).
-- [ ] Stand up real auth (hashed passwords, real sessions/tokens) — retire the plaintext `Store.login` comparison entirely.
-- [ ] Build the API surface for what `Store` already does locally: signup/login, vocab CRUD, `reviewVocab`, `completeSession` (activity logging), `getCompletionDays`, HSK progress read/write.
-- [ ] **Security pass**: hash passwords (bcrypt/argon2 via your auth provider), validate/sanitize every input server-side (today everything is trusted from the client — a real backend must not repeat that), rate-limit auth endpoints.
+### Phase 1 — Schema & backend foundation ✅ done
+- [x] Create the real schema (§2) in Postgres via migrations — 7 tables + RLS policies, applied and verified.
+- [x] Stand up real auth — Supabase Auth (real hashed passwords, real sessions), plaintext `Store.login` comparison fully retired.
+- [x] Build the API surface for what `Store` already does locally — done via Supabase's auto-generated REST API + RLS, no custom backend needed.
+- [x] **Security pass** — password hashing handled by Supabase Auth; RLS policies enforce per-user data isolation server-side (not just client-trust) for every table.
+- [x] Seeded `vocab_words` with the real 161-word HSK1/HSK2 shared curriculum extracted from the app's own `demoVocab()`.
 
-### Phase 2 — Frontend integration (swap `Store`'s guts, keep its shape)
-This is the good news: `Store` already exposes a clean, function-based API (`login`, `signup`, `getVocab`, `addVocab`, `reviewVocab`, `completeSession`, `getCompletionDays`, `getTodayProgress`, `localDateKey`, …). The migration can be **surgical** — reimplement each function to call the real API instead of `localStorage`, keeping the same names/shapes wherever possible, so the large amount of calling code already built (`renderProfile`, `renderVocabList`, the study flows, HSK flows, the activity modal, "Work on next") barely has to change.
-- [ ] Reimplement each `Store` function against the real API.
-- [ ] Handle the sync→async shift: every `Store` call is synchronous today; real API calls are async. Every call site needs `await` + real loading/error states (today's UI assumes instant success — e.g. "Add word" updates immediately; you'll want optimistic UI with rollback on failure).
-- [ ] Real session handling (httpOnly cookie or token) replacing today's simple "logged in" flag.
+### Phase 2 — Frontend integration (swap `Store`'s guts, keep its shape) ✅ done
+- [x] Reimplemented `Store` and `HSKProgress` against Supabase — cache-backed reads (sync, unchanged call sites), queued async background writes.
+- [x] Handled the sync→async shift for the 3 call sites that needed it (login/signup/logout); ~35 read call sites needed zero changes thanks to the cache design.
+- [x] Real session handling via Supabase Auth (JWT in localStorage) — **and** session restore on page load (`Store.restoreSession()`), so a returning user isn't asked to log in again.
+- [x] Fixed a real race condition found during testing: concurrent same-row background writes (e.g. two rapid reviews of one question) could land out of order and silently drop an update. Added `queueWrite()` to serialize per-row writes.
+- [x] Bonus, not originally scoped: added hash-based routing (`#/profile`, `#/vocab`, `#/study`, `#/hsk`) — back/forward and refresh now keep you on the right tab.
 
 ### Phase 3 — Feature parity for what's already built
-- [ ] Port the activity modal + "Work on next" panel logic to the real API — minimal changes needed since it was written against `Store`'s existing contracts.
-- [ ] Decide the fate of the "Try the demo account" flow (seeded real demo user server-side vs. a proper onboarding/sample-data experience).
-- [ ] Decide on existing prototype-era localStorage data: recommend **no migration** (fresh start at real launch) unless specific testers have data they care about — flag if so.
+- [x] Activity modal + "Work on next" panel — already written against `Store`'s contract, confirmed working against real data (verified live: 11 reviews, 82% accuracy, correct weak-word surfacing).
+- [x] Decide the fate of the "Try the demo account" flow — seeded a real `demo@hanzika.app` Supabase user (pre-confirmed) with 5 days of realistic activity (35 reviews, 83% accuracy, a live 5-day streak). Verified end-to-end through the real login flow.
+- [x] Decide on existing prototype-era localStorage data: **no migration** — confirmed, fresh start at real launch.
 
 ### Phase 4 — Testing, staging, hardening
-- [ ] Add minimal automated tests around the new API (auth, vocab CRUD, session completion) — there are currently zero tests anywhere in this project.
-- [ ] Full manual QA on staging against the real backend: login, study flows (Flashcards/Translate/Write), HSK flows, streak calendar + activity modal, Work on Next.
-- [ ] Re-check loading/error states now that network latency is real (it wasn't, with localStorage).
-- [ ] Basic monitoring: error tracking, uptime check.
+- [x] Add minimal automated tests around the new API — Playwright e2e suite added (`tests/`, `npm run test:e2e`): auth (login, logout, session persistence, wrong password, signup-needs-confirmation), vocab CRUD (add/edit/delete, each verified to survive a reload), and a full flashcard study session (persists to `sessions_completed` + `review_log`). All against the real Supabase project, using throwaway pre-confirmed test accounts cleaned up after each run.
+- [x] Re-check loading/error states now that network latency is real — **this caught two real bugs**, not hypothetical ones:
+  - `deleteVocab` fired its Supabase delete in the background with no way to know when it landed; an immediate reload could race ahead of it and the "deleted" word would reappear. Same latent bug existed in `updateVocab`/`addVocab`. Fixed: these now expose an awaitable `._persisted` promise (via `queueWrite`), and the UI awaits it before showing success/failure in the toast — so a delete/edit/add now either genuinely succeeds or visibly says so if it doesn't.
+  - Found and fixed during the same pass: a self-introduced ordering bug where the vocab list was re-rendered *before* the cache mutation that was supposed to appear in it.
+- [ ] Full manual QA on staging against the real backend: login, study flows (Flashcards/Translate/Write), HSK flows, streak calendar + activity modal, Work on Next. (Auth, vocab CRUD, and one flashcard round are now covered by the e2e suite above; Translate/Write modes and the full HSK practice/test flow still want a manual pass.)
+- [x] Basic monitoring: error tracking — Sentry wired in via `https://browser.sentry-cdn.com/8.9.2/bundle.min.js` (CDN, no build step needed, matching how Supabase's client is loaded), initialized as the very first script in `<head>` so it can catch errors from everything else. `environment` auto-detects `development` on localhost vs `production` elsewhere. Verified end-to-end: sent a real test error and confirmed Sentry's ingest endpoint returned 200 (check the dashboard for "Hanzika Sentry wiring test — safe to ignore/delete" and resolve it). Uptime check still open — not set up.
 
 ### Phase 5 — Launch
-- [ ] Domain/DNS, production secrets, **backups enabled on the real DB** (this is the whole point of leaving localStorage — don't skip it).
-- [ ] Soft launch + rollback plan.
-- [ ] Post-launch roadmap: revisit `IMPROVEMENT_PROPOSALS.md`. Several proposals (retention %, skill-accuracy, confidence calibration) were explicitly blocked on "no real data capture yet" — a real backend is exactly what unblocks them, so they become natural v1.1+ candidates.
+
+**0. Decisions — resolved:**
+- **Dev/prod split: yes.** Production gets its own fresh Supabase project, separate from the one every test account and the demo account live in. Needs: create the project (dashboard action — same as the original setup, I can't create Supabase projects via API), then re-run `supabase/migrations/` against it and reseed the 161 HSK words (both fully scripted from this session, just pointed at a new project URL/keys).
+- **Hosting: Vercel.** Zero-config for a static site, GitHub-connected, auto TLS, instant one-click rollback.
+
+**1. Hosting & deploy**
+- [ ] Create a Vercel account (if you don't already have one) and connect `github.com/ilhampamn/hanzika` (branch `main`) — both are account-level actions on your side; I can walk through the config once the project exists.
+- [ ] Set the **publish directory to the repo root** (no build step — it's one HTML file + a few JS/asset files) and explicitly exclude `tests/`, `node_modules/`, `.env`, `supabase/` from being served (none are needed at runtime, and `.env` must never end up reachable over HTTP even though it's gitignored — worth a host-level deny rule as a second layer of protection, not just relying on git history).
+- [ ] Point the production entry at `hanzika_18_hover_dictionary_stable.html` — either as the site's index (rename/alias) or via a redirect from `/`, so users don't need the full filename in the URL.
+- [ ] Confirm the chosen host supports **one-click rollback to a previous deploy** (Vercel and Netlify both do, out of the box) — that *is* the rollback plan; no separate tooling needed for a static site.
+
+**2. Domain & DNS**
+- [ ] Decide the domain (a subdomain of something you own, or a new purchase) — not yet decided.
+- [ ] Point DNS at the host, provision TLS (automatic on all three hosting options above).
+
+**3. Supabase production readiness** (new project) ✅ mostly done
+- [x] Created the new Supabase project — `vertgsgbmtvopwqtigty.supabase.co`.
+- [x] Applied both migrations (`20260724130734_initial_schema.sql`, `20260724141900_hsk_chapter_state.sql`) — verified all 8 tables exist.
+- [x] Reseeded the 161-word shared HSK vocabulary — verified count via REST.
+- [x] `SUPABASE_URL`/`SUPABASE_ANON_KEY` are now environment-aware in `hanzika_18_hover_dictionary_stable.html` (`IS_LOCAL_DEV` check on `location.hostname`): `localhost`/`127.0.0.1` keeps using the original dev project (so local testing and the Playwright suite never touch real user data), everything else uses the new production project. Verified both the local-dev branch (still points at the old project, login still works) and the exact prod URL/key pair (reads all 161 rows with no error) directly from the browser.
+- [ ] Add the real production URL to **Authentication → URL Configuration → Redirect URLs** on the *new* project (same step we did for `localhost:5187` earlier, now needs repeating there) — can't finalize until the domain is decided (§2) and the site is actually deployed (§1), since that's the exact URL to allow-list.
+- [ ] Check the project's backup posture under Settings → Backups. Supabase's free tier has limited backup retention; if this project stays on free tier for launch, know that explicitly rather than assuming backups match a paid tier's guarantees. Decide now whether that's acceptable for real user data or whether Pro (with longer retention / PITR) is worth it before real signups start.
+- [ ] Decide on email delivery: Supabase's built-in mailer is rate-limited (2/hour on free tier — we hit this multiple times this session). Fine for a slow launch; will not survive a real signup spike. If more than a trickle of signups is expected at launch, configure a custom SMTP provider (Resend, Postmark, etc.) in Auth settings ahead of time.
+- [ ] Decide the demo account's fate at scale: it's currently one shared `demo@hanzika.app` account with seeded data (from this session). Fine for a soft launch; if it gets meaningfully more traffic, its stats will drift from the curated "5-day streak, 83% accuracy" story pretty fast, and every visitor edits the *same* account. Not urgent — just don't forget it's a shared mutable demo, not a sandbox.
+
+**4. Soft launch**
+- [ ] Decide initial audience (just you + a few named testers vs. a public link) and for how long before wider release.
+- [ ] Watch Sentry (now wired in) and Supabase's own logs/dashboard actively during that window — this is the first time this app will see real network latency and real concurrent users, neither of which local testing fully replicates.
+
+**5. Post-launch roadmap**
+- [ ] Revisit `IMPROVEMENT_PROPOSALS.md`. Several proposals (retention %, skill-accuracy, confidence calibration) were explicitly blocked on "no real data capture yet" — a real backend is exactly what unblocks them, so they become natural v1.1+ candidates.
+- [ ] The known-open manual QA (Translate/Write study modes, full HSK practice/test flow) from Phase 4 is worth finishing before or shortly after soft launch, not indefinitely deferred.
 
 ---
 

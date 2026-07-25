@@ -11,3 +11,10 @@
 # Env / secrets (none exist yet, but keep this ready for the real-deployment phase)
 .env
 .env.local
+
+# Node / Playwright
+node_modules/
+playwright-report/
+test-results/
+/blob-report/
+/playwright/.cache/

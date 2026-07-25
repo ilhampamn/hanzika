@@ -1,0 +1,7 @@
+| Hanzi | Pinyin | Meaning | Example (中文) | Translation | HSK | Tags |
+|---|---|---|---|---|---|---|
+| 米饭 | mǐ fàn | rice | 我喜欢吃米饭。 | I like eating rice. | 1 | food |
+| 图书馆 | tú shū guǎn | library | 图书馆离学校很近。 | The library is close to the school. | 2 | places, school |
+| 天气 | tiān qì | weather | 今天天气很好。 | The weather is great today. | 1 | nature |
+| 便宜 | pián yi | cheap | 这件衣服很便宜。 | This piece of clothing is cheap. | 2 | shopping, adjectives |
+| 认识 | rèn shi | to know; to recognize | 很高兴认识你。 | Nice to meet you. | 1 | verbs |
