@@ -482,6 +482,25 @@ if(typeof gsap === 'undefined'){
   }
   .pinyin-hint{ font-size:12px; font-weight:600; color:var(--text-faint); margin:-9px 0 15px; }
 
+  .example-rows{ display:flex; flex-direction:column; gap:8px; margin-bottom:8px; }
+  .example-row{ display:flex; gap:8px; align-items:center; animation:rowIn 200ms var(--ease-pop); }
+  .example-row input{
+    flex:1; min-width:0; background:var(--surface-2); border:2px solid var(--border); color:var(--text-hi);
+    border-radius:12px; padding:9px 11px; font-size:13.5px; font-weight:600;
+  }
+  .example-row input:focus{ outline:none; border-color:var(--pink); background:var(--surface); }
+  .example-remove-btn{
+    flex-shrink:0; width:30px; height:30px; border-radius:50%; border:2px solid var(--border);
+    background:var(--surface); color:var(--text-faint); font-size:15px; font-weight:800; cursor:pointer;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .example-remove-btn:hover{ border-color:var(--red); color:var(--red-dk); background:var(--red-bg); }
+  .btn-add-example{
+    align-self:flex-start; background:none; border:none; color:var(--pink-dk); font-weight:800;
+    font-size:12.5px; text-transform:uppercase; letter-spacing:0.03em; cursor:pointer; padding:4px 0;
+  }
+  .btn-add-example:hover{ text-decoration:underline; }
+
   .form-row-2{ display:grid; grid-template-columns:1fr 1fr; gap:12px; }
   .modal-footer{
     display:flex; align-items:center; gap:10px; padding:18px 24px;
@@ -622,7 +641,16 @@ if(typeof gsap === 'undefined'){
   .example-title{ font-size:10px; font-weight:900; color:var(--text-faint); text-transform:uppercase; letter-spacing:.08em; margin-bottom:5px; }
   .example-item{ padding:5px 2px; border-bottom:1px solid var(--surface-2); }
   .example-item:last-child{ border-bottom:none; }
-  .example-zh{ font-family:'Noto Sans SC', sans-serif; font-size:12.5px; font-weight:700; color:var(--text-hi); line-height:1.4; }
+  .example-zh{ font-family:'Noto Sans SC', sans-serif; font-size:12.5px; font-weight:700; color:var(--text-hi); line-height:1.4; display:flex; align-items:center; gap:5px; }
+  .card-audio-btn{
+    flex-shrink:0; width:18px; height:18px; border:none; background:none; padding:0; cursor:pointer;
+    color:var(--text-faint); display:flex; align-items:center; justify-content:center;
+  }
+  .card-audio-btn .repo-icon{ width:14px; height:14px; flex:0 0 14px; }
+  .card-audio-btn:hover{ color:var(--pink); }
+  .card-audio-btn.is-loading{ color:var(--text-faint); opacity:0.5; animation:cardAudioPulse 1s ease-in-out infinite; }
+  .card-audio-btn.is-playing{ color:var(--pink); }
+  @keyframes cardAudioPulse{ 50%{ opacity:1; } }
   .example-en{ margin-top:1px; font-size:10.5px; font-weight:600; color:var(--text-faint); line-height:1.35; }
   .seal{
     position:absolute; top:16px; right:16px; width:36px; height:36px; border-radius:12px;
@@ -2164,15 +2192,10 @@ if(typeof gsap === 'undefined'){
           <div class="field-error">Enter a meaning.</div>
         </div>
 
-        <div class="form-row-2">
-          <div class="field">
-            <label for="fExZh">Example sentence (中文)</label>
-            <input type="text" id="fExZh" placeholder="Optional">
-          </div>
-          <div class="field">
-            <label for="fExEn">Translation</label>
-            <input type="text" id="fExEn" placeholder="Optional">
-          </div>
+        <div class="field">
+          <label>Example sentences</label>
+          <div class="example-rows" id="exampleRows"></div>
+          <button type="button" class="btn-add-example" id="addExampleBtn">+ Add example</button>
         </div>
 
         <div class="form-row-2">
@@ -3072,10 +3095,11 @@ const Store = (() => {
 
   function addVocab(entry){
     const id = crypto.randomUUID();
-    const examples = entry.exZh ? [{ zh: entry.exZh, en: entry.exEn || '' }] : [];
+    const examples = Array.isArray(entry.examples) ? entry.examples.filter(x => x && x.zh)
+      : (entry.exZh ? [{ zh: entry.exZh, en: entry.exEn || '' }] : []);
     const word = {
       id, chars: entry.chars, pinyin: entry.pinyin, meaning: entry.meaning,
-      exZh: entry.exZh || '', exEn: entry.exEn || '', examples,
+      exZh: examples[0]?.zh || '', exEn: examples[0]?.en || '', examples,
       hsk: entry.hsk ?? null, hskChapter: null, tags: entry.tags || [],
       source: 'custom', image: entry.image || null, _ownerId: authUser.id,
       stats: { box:0, seen:0, correct:0, streak:0, addedAt: Date.now(), lastReviewedAt:null, dueAt: Date.now() },
@@ -3121,8 +3145,10 @@ const Store = (() => {
     const w = vocab.find(w => w.id === id);
     if(!w) return;
     Object.assign(w, patch);
-    if(patch.exZh !== undefined || patch.exEn !== undefined){
-      w.examples = w.exZh ? [{ zh: w.exZh, en: w.exEn || '' }] : [];
+    if(patch.examples !== undefined){
+      w.examples = Array.isArray(patch.examples) ? patch.examples.filter(x => x && x.zh) : [];
+      w.exZh = w.examples[0]?.zh || '';
+      w.exEn = w.examples[0]?.en || '';
     }
     w._persisted = queueWrite(`vocab_words:${id}`, () => supa.from('vocab_words').update({
       chars: w.chars, pinyin: w.pinyin, meaning: w.meaning, hsk_level: w.hsk, tags: w.tags,
@@ -4062,11 +4088,10 @@ function openVocabModal(word){
 
   document.getElementById('fHanzi').value = word ? word.chars.join('') : '';
   document.getElementById('fMeaning').value = word ? word.meaning : '';
-  document.getElementById('fExZh').value = word ? word.exZh : '';
-  document.getElementById('fExEn').value = word ? word.exEn : '';
   document.getElementById('fHsk').value = word && word.hsk ? String(word.hsk) : '';
   document.getElementById('fTags').value = word ? word.tags.join(', ') : '';
 
+  renderExampleRows(word ? word.examples : []);
   renderPinyinRows(word ? word.chars.join('') : '', word ? word.pinyin : []);
   updatePreview();
 
@@ -4484,6 +4509,43 @@ function readPinyinRows(){
   ]);
 }
 
+function renderExampleRows(existingExamples){
+  const container = document.getElementById('exampleRows');
+  const rows = (existingExamples && existingExamples.length) ? existingExamples : [{ zh:'', en:'' }];
+  container.innerHTML = rows.map(ex => `
+    <div class="example-row">
+      <input type="text" class="ex-zh-input" placeholder="Example sentence (中文)" value="${escapeHtml(ex.zh || '')}">
+      <input type="text" class="ex-en-input" placeholder="Translation" value="${escapeHtml(ex.en || '')}">
+      <button type="button" class="example-remove-btn" aria-label="Remove this example">×</button>
+    </div>`).join('');
+}
+function readExampleRows(){
+  return [...document.querySelectorAll('.example-row')]
+    .map(row => ({
+      zh: row.querySelector('.ex-zh-input').value.trim(),
+      en: row.querySelector('.ex-en-input').value.trim(),
+    }))
+    .filter(ex => ex.zh); // a translation with no Chinese sentence isn't a usable example
+}
+document.getElementById('addExampleBtn').addEventListener('click', () => {
+  const container = document.getElementById('exampleRows');
+  const row = document.createElement('div');
+  row.className = 'example-row';
+  row.innerHTML = `
+    <input type="text" class="ex-zh-input" placeholder="Example sentence (中文)">
+    <input type="text" class="ex-en-input" placeholder="Translation">
+    <button type="button" class="example-remove-btn" aria-label="Remove this example">×</button>`;
+  container.appendChild(row);
+  row.querySelector('.ex-zh-input').focus();
+});
+document.getElementById('exampleRows').addEventListener('click', e => {
+  const btn = e.target.closest('.example-remove-btn');
+  if(!btn) return;
+  const rows = document.querySelectorAll('.example-row');
+  if(rows.length <= 1){ btn.closest('.example-row').querySelectorAll('input').forEach(i => i.value = ''); return; }
+  btn.closest('.example-row').remove();
+});
+
 function updatePreview(){
   const chars = document.getElementById('fHanzi').value.trim();
   const meaning = document.getElementById('fMeaning').value.trim();
@@ -4509,14 +4571,13 @@ document.getElementById('saveWordBtn').addEventListener('click', async () => {
   const pinyin = readPinyinRows();
   const hskVal = document.getElementById('fHsk').value;
   const tags = document.getElementById('fTags').value.split(',').map(s => s.trim()).filter(Boolean);
-  const exZh = document.getElementById('fExZh').value.trim();
-  const exEn = document.getElementById('fExEn').value.trim();
+  const examples = readExampleRows();
 
   closeVocabModal();
 
   if(editingId){
     const word = Store.updateVocab(editingId, {
-      chars: Array.from(chars), pinyin, meaning, exZh, exEn,
+      chars: Array.from(chars), pinyin, meaning, examples,
       hsk: hskVal ? parseInt(hskVal,10) : null,
       tags, image: pendingImage,
     });
@@ -4526,7 +4587,7 @@ document.getElementById('saveWordBtn').addEventListener('click', async () => {
     showToast(result.ok ? `Saved changes to ${chars}` : `Couldn't save changes to ${chars} — check your connection and try again`);
   } else {
     const word = Store.addVocab({
-      chars: Array.from(chars), pinyin, meaning, exZh, exEn,
+      chars: Array.from(chars), pinyin, meaning, examples,
       hsk: hskVal ? parseInt(hskVal,10) : null,
       tags, image: pendingImage,
       source: 'custom',
@@ -4883,7 +4944,7 @@ function buildCard(word){
   const themeKey = semanticTags.find(t => themeLabels[t]);
   const themeLabel = themeLabels[themeKey] || (semanticTags[0] ? String(semanticTags[0]).replace(/\b\w/g, c=>c.toUpperCase()) : 'General vocabulary');
   const examples = (word.examples && word.examples.length ? word.examples : (word.exZh ? [{zh:word.exZh,en:word.exEn}] : [])).slice(0,3);
-  const examplesHtml = examples.length ? `<div class="example"><div class="example-title">Example sentences</div>${examples.map(x=>`<div class="example-item"><div class="example-zh">${escapeHtml(x.zh)}</div><div class="example-en">${escapeHtml(x.en || '')}</div></div>`).join('')}</div>` : '';
+  const examplesHtml = examples.length ? `<div class="example"><div class="example-title">Example sentences</div>${examples.map(x=>`<div class="example-item"><div class="example-zh">${escapeHtml(x.zh)}<button type="button" class="card-audio-btn" data-example-text="${escapeHtml(x.zh)}" aria-label="Play this sentence at ${SpeechPreferences.label()} speed">${ICONS.volume}</button></div><div class="example-en">${escapeHtml(x.en || '')}</div></div>`).join('')}</div>` : '';
 
   card.innerHTML = `
     <div class="face face-front">
@@ -4937,8 +4998,14 @@ function bindTopCard(){
       gsap.fromTo(hint, {opacity:0, y:5, scale:.95}, {opacity:1, y:0, scale:1, duration:.2*D, ease:'back.out(1.5)'});
     });
   }
+  top.querySelectorAll('.card-audio-btn').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      speakHskAlibabaAudio(btn.dataset.exampleText, btn);
+    });
+  });
   top.addEventListener('pointerdown', e => {
-    if(e.target.closest('.hint-btn')) return;
+    if(e.target.closest('.hint-btn') || e.target.closest('.card-audio-btn')) return;
     if(busy) return;
     dragging = true; moved = false; px = e.clientX;
     top.setPointerCapture(e.pointerId);
@@ -5685,9 +5752,13 @@ const HskAlibabaAudio=(()=>{
   let generation=0;
 
   async function fetchAudioResponse(text){
+    const { data:{ session } } = await supa.auth.getSession();
     const response=await fetch('/api/tts',{
       method:'POST',
-      headers:{'Content-Type':'application/json'},
+      headers:{
+        'Content-Type':'application/json',
+        ...(session?.access_token ? { Authorization:`Bearer ${session.access_token}` } : {}),
+      },
       body:JSON.stringify({provider:'alibaba',text})
     });
     if(!response.ok){
@@ -5710,7 +5781,9 @@ const HskAlibabaAudio=(()=>{
   }
 
   function resetButtons(){
-    hskRoot.querySelectorAll('.hsk-audio-btn,.hsk-reading-speech').forEach(button=>{
+    // document-scoped (not just hskRoot) so this also resets the flashcard
+    // example audio buttons — same shared play/stop/cache logic, different view.
+    document.querySelectorAll('.hsk-audio-btn,.hsk-reading-speech,.card-audio-btn').forEach(button=>{
       button.classList.remove('is-loading','is-playing');
       button.disabled=false;
       const title=button.querySelector('.hsk-audio-copy > span');
