@@ -8,7 +8,7 @@
 # Logs
 *.log
 
-# Env / secrets (none exist yet, but keep this ready for the real-deployment phase)
+# Environment secrets
 .env
 .env.local
 

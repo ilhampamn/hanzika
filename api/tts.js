@@ -4,23 +4,13 @@
 // {provider, text} -> raw audio bytes with a Content-Type: audio/* header
 // (the frontend does response.blob(), not response.json()).
 
-const SUPABASE_URL = 'https://vertgsgbmtvopwqtigty.supabase.co';
-const SUPABASE_ANON_KEY = 'sb_publishable_Wvh11Vb64FxHavrKNtsTew_BCt9nuPl';
-
-async function verifySession(authHeader) {
-  const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
-  if (!token) return false;
-  const res = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
-    headers: { Authorization: `Bearer ${token}`, apikey: SUPABASE_ANON_KEY },
-  });
-  return res.ok;
-}
+import { requireUser } from './_lib/auth.js';
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed.' });
 
-  const authed = await verifySession(req.headers.authorization);
-  if (!authed) return res.status(401).json({ error: 'You need to be signed in to play audio.' });
+  const user = await requireUser(req, res);
+  if (!user) return;
 
   const text = String(req.body?.text || '').trim().slice(0, 500);
   if (!text) return res.status(400).json({ error: 'No text provided.' });

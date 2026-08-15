@@ -1,37 +1,33 @@
 import { test as base } from '@playwright/test';
+import { randomUUID } from 'node:crypto';
+import { neon } from '@neondatabase/serverless';
+import { hashPassword } from '../api/_lib/auth.js';
 
-const SUPABASE_URL = process.env.SUPABASE_URL;
-const SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
-
-function adminHeaders(){
-  return {
-    apikey: SERVICE_KEY,
-    Authorization: `Bearer ${SERVICE_KEY}`,
-    'Content-Type': 'application/json',
-  };
+function sql(){
+  if(!process.env.DATABASE_URL) throw new Error('DATABASE_URL is required for e2e tests.');
+  return neon(process.env.DATABASE_URL);
 }
 
-// Creates a real, pre-confirmed Supabase user for a test (bypasses the email
-// confirmation flow — that flow itself isn't what these tests are verifying)
-// and deletes it (cascades to all owned rows) when the test finishes, so
-// e2e runs never leave junk behind in the real project.
-export async function createTestUser(request, { name = 'Test User' } = {}){
+// Creates a real Neon user and deletes it after the test; foreign-key cascades
+// remove all progress created by that user.
+export async function createTestUser(_request, { name = 'Test User' } = {}){
   const email = `pw-test-${Date.now()}-${Math.random().toString(36).slice(2, 8)}@gmail.com`;
   const password = 'PlaywrightTest123!';
-  const res = await request.post(`${SUPABASE_URL}/auth/v1/admin/users`, {
-    headers: adminHeaders(),
-    data: { email, password, email_confirm: true, user_metadata: { name } },
-  });
-  if(!res.ok()) throw new Error(`createTestUser failed: ${res.status()} ${await res.text()}`);
-  const user = await res.json();
-  return { id: user.id, email, password };
+  const id = randomUUID();
+  const passwordHash = await hashPassword(password);
+  await sql()`with new_user as (
+    insert into users (id, email, password_hash, name) values (${id}, ${email}, ${passwordHash}, ${name})
+  ) insert into profiles (id, name) values (${id}, ${name})`;
+  return { id, email, password };
 }
 
-export async function deleteTestUser(request, userId){
+export async function deleteTestUser(_request, userId){
   if(!userId) return;
-  await request.delete(`${SUPABASE_URL}/auth/v1/admin/users/${userId}`, {
-    headers: adminHeaders(),
-  });
+  await sql()`delete from users where id = ${userId}`;
+}
+
+export async function deleteTestUserByEmail(email){
+  await sql()`delete from users where lower(email) = ${String(email).toLowerCase()}`;
 }
 
 export const test = base.extend({

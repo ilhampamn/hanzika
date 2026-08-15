@@ -20,7 +20,6 @@ if(typeof Sentry !== 'undefined'){
 }
 </script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script>
 // Resilience: if the GSAP CDN is unreachable (offline, blocked network),
 // fall back to a no-op animation shim so the app still works — transitions
@@ -2925,26 +2924,31 @@ function starterVocab(){
 }
 
 /* =====================================================================
-   STORE — backed by Supabase (Postgres + Auth + RLS). Real persistence,
+   STORE — backed by Neon Postgres through same-origin serverless APIs.
    real accounts. Reads stay synchronous against an in-memory cache
    (populated on login/signup and kept current locally); writes fire the
-   Supabase call in the background and update the cache immediately so
+   API call in the background and update the cache immediately so
    every existing call site — almost all written against a synchronous
    Store — keeps working unchanged. Only login/signup/logout are async,
    because the UI must wait for them before rendering the app shell.
    ===================================================================== */
-// Dev/prod split: local testing (including the Playwright suite) stays on
-// the original project so it never touches real user data; the deployed
-// site uses its own, separate production project. Same detection pattern
-// already used for Sentry's environment tag below.
-const IS_LOCAL_DEV = ['localhost', '127.0.0.1'].includes(location.hostname);
-const SUPABASE_URL = IS_LOCAL_DEV
-  ? 'https://wnryfjwklxdzfjmlqlig.supabase.co'
-  : 'https://vertgsgbmtvopwqtigty.supabase.co';
-const SUPABASE_ANON_KEY = IS_LOCAL_DEV
-  ? 'sb_publishable_p2-fHeqrSqQcEYWdXRvJOA_hh95i4u-'
-  : 'sb_publishable_Wvh11Vb64FxHavrKNtsTew_BCt9nuPl';
-const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+async function apiRequest(path, options = {}){
+  const response = await fetch(path, {
+    credentials:'same-origin',
+    ...options,
+    headers:{
+      ...(options.body ? {'Content-Type':'application/json'} : {}),
+      ...(options.headers || {}),
+    },
+  });
+  const data = await response.json().catch(() => ({}));
+  if(!response.ok) throw new Error(data.error || `Request failed (${response.status}).`);
+  return data;
+}
+
+function saveData(action, payload){
+  return apiRequest('/api/data', { method:'POST', body:JSON.stringify({ action, payload }) });
+}
 
 // Background writes to the same row (e.g. two rapid reviews of the same word)
 // fire concurrently and can arrive at Postgres out of order, so a later upsert
@@ -2967,7 +2971,7 @@ function queueWrite(key, fn){
 }
 
 const Store = (() => {
-  let authUser = null;   // supabase auth user object
+  let authUser = null;   // authenticated user returned by /api/auth
   let profile = null;    // { id, name, sessionsCompleted, lastStudied, joined }
   let vocab = [];         // app-shaped word objects, cached in memory
   let reviewLog = [];      // [{ ts, knew }]
@@ -3031,25 +3035,19 @@ const Store = (() => {
   async function loadUserData(user){
     authUser = user;
     const uid = user.id;
-    const [profileRes, wordsRes, statsRes, logRes, activitiesRes] = await Promise.all([
-      supa.from('profiles').select('*').eq('id', uid).maybeSingle(),
-      supa.from('vocab_words').select('*'),
-      supa.from('vocab_stats').select('*').eq('user_id', uid),
-      supa.from('review_log').select('ts,knew').eq('user_id', uid).order('ts', { ascending: true }),
-      supa.from('activities').select('*').eq('user_id', uid).order('ts', { ascending: true }),
-    ]);
-    const p = profileRes.data || { id: uid, name: user.email.split('@')[0], sessions_completed: 0, last_studied_at: null, created_at: new Date().toISOString() };
+    const result = await apiRequest('/api/data?scope=bootstrap');
+    const p = result.profile || { id: uid, name: user.email.split('@')[0], sessions_completed: 0, last_studied_at: null, created_at: new Date().toISOString() };
     profile = {
       id: p.id, name: p.name, email: user.email,
       joined: new Date(p.created_at).getTime(),
       sessionsCompleted: p.sessions_completed,
       lastStudied: p.last_studied_at ? new Date(p.last_studied_at).getTime() : null,
     };
-    const statsByWord = new Map((statsRes.data || []).map(s => [s.word_id, s]));
-    vocab = (wordsRes.data || []).map(row => dbRowToWord(row, statsByWord.get(row.id))).sort((a,b) => b.stats.addedAt - a.stats.addedAt);
-    reviewLog = (logRes.data || []).map(r => ({ ts: new Date(r.ts).getTime(), knew: r.knew }));
+    const statsByWord = new Map((result.stats || []).map(s => [s.word_id, s]));
+    vocab = (result.words || []).map(row => dbRowToWord(row, statsByWord.get(row.id))).sort((a,b) => b.stats.addedAt - a.stats.addedAt);
+    reviewLog = (result.reviewLog || []).map(r => ({ ts: new Date(r.ts).getTime(), knew: r.knew, missReason:r.miss_reason }));
     completionDays = {};
-    (activitiesRes.data || []).forEach(row => {
+    (result.activities || []).forEach(row => {
       const rec = (completionDays[row.activity_date] ||= { rounds:0, words:0, activities:[] });
       rec.rounds += 1;
       rec.words += row.item_count;
@@ -3058,34 +3056,34 @@ const Store = (() => {
   }
 
   async function login(email, password){
-    const { data, error } = await supa.auth.signInWithPassword({ email, password });
-    if(error) return { ok:false, error: 'Incorrect email or password.' };
-    await loadUserData(data.user);
-    return { ok:true };
+    try {
+      const data = await apiRequest('/api/auth', { method:'POST', body:JSON.stringify({ action:'login', email, password }) });
+      await loadUserData(data.user);
+      return { ok:true };
+    } catch(error){ return { ok:false, error:error.message }; }
   }
 
-  // Supabase keeps the session token in localStorage across reloads on its
-  // own, but nothing checks for it on page load — call this once at startup
+  // The server keeps a secure session cookie across reloads. Call this once
+  // at startup so a returning user skips the login screen.
   // so a returning user with a still-valid session skips the login screen.
   async function restoreSession(){
-    const { data } = await supa.auth.getSession();
-    if(!data.session) return false;
-    await loadUserData(data.session.user);
-    return true;
+    try {
+      const data = await apiRequest('/api/auth');
+      await loadUserData(data.user);
+      return true;
+    } catch(error){ return false; }
   }
 
   async function signup(name, email, password){
-    const { data, error } = await supa.auth.signUp({ email, password, options: { data: { name }, emailRedirectTo: window.location.href } });
-    if(error) return { ok:false, error: error.message.includes('already registered') ? 'An account with this email already exists.' : error.message };
-    if(!data.session){
-      return { ok:false, error: 'Account created — check your email to confirm, then log in.' };
-    }
-    await loadUserData(data.user);
-    return { ok:true };
+    try {
+      const data = await apiRequest('/api/auth', { method:'POST', body:JSON.stringify({ action:'signup', name, email, password }) });
+      await loadUserData(data.user);
+      return { ok:true };
+    } catch(error){ return { ok:false, error:error.message }; }
   }
 
   async function logout(){
-    await supa.auth.signOut();
+    await apiRequest('/api/auth', { method:'POST', body:JSON.stringify({ action:'logout' }) }).catch(() => {});
     clearCache();
   }
 
@@ -3108,10 +3106,10 @@ const Store = (() => {
     // Exposed as ._persisted (without changing this function's synchronous
     // return shape) so a caller that needs certainty the write actually
     // landed — e.g. before navigating away — can await it.
-    word._persisted = queueWrite(`vocab_words:${id}`, () => supa.from('vocab_words').insert({
-      id, owner_id: authUser.id, chars: entry.chars, pinyin: entry.pinyin, meaning: entry.meaning,
-      source: 'custom', hsk_level: entry.hsk ?? null, tags: entry.tags || [], examples, image_url: entry.image || null,
-    }).then(({ error }) => { if(error) throw error; }));
+    word._persisted = queueWrite(`vocab_words:${id}`, () => saveData('add-vocab', {
+      id, chars:entry.chars, pinyin:entry.pinyin, meaning:entry.meaning,
+      hskLevel:entry.hsk ?? null, tags:entry.tags || [], examples, imageUrl:entry.image || null,
+    }));
     return word;
   }
 
@@ -3133,11 +3131,11 @@ const Store = (() => {
         stats: { box:0, seen:0, correct:0, streak:0, addedAt: Date.now(), lastReviewedAt:null, dueAt: Date.now() },
       };
       vocab.unshift(word);
-      rows.push({ id, owner_id: authUser.id, chars: entry.chars, pinyin: entry.pinyin, meaning: entry.meaning,
-        source: 'custom', hsk_level: entry.hsk ?? null, tags: entry.tags || [], examples, image_url: entry.image || null });
+      rows.push({ id, chars:entry.chars, pinyin:entry.pinyin, meaning:entry.meaning,
+        hskLevel:entry.hsk ?? null, tags:entry.tags || [], examples, imageUrl:entry.image || null });
       added++;
     });
-    if(rows.length) supa.from('vocab_words').insert(rows).then(({ error }) => { if(error) console.error('importVocab failed:', error); });
+    if(rows.length) saveData('import-vocab', { rows }).catch(error => console.error('importVocab failed:', error));
     return { added, skipped };
   }
 
@@ -3150,16 +3148,16 @@ const Store = (() => {
       w.exZh = w.examples[0]?.zh || '';
       w.exEn = w.examples[0]?.en || '';
     }
-    w._persisted = queueWrite(`vocab_words:${id}`, () => supa.from('vocab_words').update({
-      chars: w.chars, pinyin: w.pinyin, meaning: w.meaning, hsk_level: w.hsk, tags: w.tags,
-      examples: w.examples, image_url: w.image,
-    }).eq('id', id).then(({ error }) => { if(error) throw error; }));
+    w._persisted = queueWrite(`vocab_words:${id}`, () => saveData('update-vocab', {
+      id, chars:w.chars, pinyin:w.pinyin, meaning:w.meaning, hskLevel:w.hsk, tags:w.tags,
+      examples:w.examples, imageUrl:w.image,
+    }));
     return w;
   }
 
   function deleteVocab(id){
     vocab = vocab.filter(w => w.id !== id);
-    return queueWrite(`vocab_words:${id}`, () => supa.from('vocab_words').delete().eq('id', id).then(({ error }) => { if(error) throw error; }));
+    return queueWrite(`vocab_words:${id}`, () => saveData('delete-vocab', { id }));
   }
 
   // binary review: knew it or didn't. Updates strength, accuracy, streak,
@@ -3185,12 +3183,11 @@ const Store = (() => {
     }
     st.lastReviewedAt = Date.now();
     reviewLog.push({ ts: Date.now(), knew, missReason });
-    const uid = authUser.id;
-    queueWrite(`vocab_stats:${id}`, () => supa.from('vocab_stats').upsert({
-      user_id: uid, word_id: id, box: st.box, seen: st.seen, correct: st.correct, streak: st.streak,
-      due_at: new Date(st.dueAt).toISOString(), last_reviewed_at: new Date(st.lastReviewedAt).toISOString(),
-    }).then(({ error }) => { if(error) console.error('reviewVocab stats upsert failed:', error); }));
-    supa.from('review_log').insert({ user_id: uid, word_id: id, knew, miss_reason: missReason }).then(({ error }) => { if(error) console.error('review_log insert failed:', error); });
+    queueWrite(`vocab_stats:${id}`, () => saveData('review-vocab', {
+      id, box:st.box, seen:st.seen, correct:st.correct, streak:st.streak,
+      dueAt:new Date(st.dueAt).toISOString(), lastReviewedAt:new Date(st.lastReviewedAt).toISOString(),
+      knew, missReason,
+    }).catch(error => console.error('reviewVocab failed:', error)));
   }
 
   // deck-level accuracy over calendar windows — dense enough to be meaningful
@@ -3238,14 +3235,11 @@ const Store = (() => {
     rec.rounds += 1;
     rec.words += itemCount;
     rec.activities.push(entry);
-    const uid = authUser.id;
-    supa.from('activities').insert({
-      id, user_id: uid, ts: new Date(ts).toISOString(), activity_date: key,
-      kind: entry.kind, mode: entry.mode, mode_label: entry.modeLabel, scope_label: entry.scopeLabel,
-      item_count: itemCount, unit: entry.unit, correct, incorrect, accuracy,
-    }).then(({ error }) => { if(error) console.error('completeSession activity insert failed:', error); });
-    queueWrite(`profiles:${uid}`, () => supa.from('profiles').update({ sessions_completed: u.sessionsCompleted, last_studied_at: new Date(ts).toISOString() }).eq('id', uid)
-      .then(({ error }) => { if(error) console.error('completeSession profile update failed:', error); }));
+    queueWrite(`profiles:${authUser.id}`, () => saveData('complete-session', {
+      id, ts:new Date(ts).toISOString(), activityDate:key, kind:entry.kind, mode:entry.mode,
+      modeLabel:entry.modeLabel, scopeLabel:entry.scopeLabel, itemCount, unit:entry.unit,
+      correct, incorrect, accuracy, sessionsCompleted:u.sessionsCompleted,
+    }).catch(error => console.error('completeSession failed:', error)));
     return entry;
   }
 
@@ -3664,7 +3658,7 @@ function enterApp(){
   });
 }
 
-// Supabase persists the session token itself, but nothing checked for it on
+// The server persists the session cookie, but the UI still needs to check it on
 // load — restore it here so a returning user with a still-valid session
 // skips straight past the login screen instead of being asked to sign in again.
 (async () => {
@@ -5367,22 +5361,18 @@ const HSKProgress = (() => {
   async function load(userId){
     uid = userId;
     data = {};
-    const [progRes, testRes, stateRes] = await Promise.all([
-      supa.from('hsk_progress').select('*').eq('user_id', userId),
-      supa.from('hsk_test_scores').select('*').eq('user_id', userId),
-      supa.from('hsk_chapter_state').select('*').eq('user_id', userId),
-    ]);
-    (progRes.data || []).forEach(row => {
+    const result = await apiRequest('/api/data?scope=hsk');
+    (result.progress || []).forEach(row => {
       chapter(row.chapter_id).questions[row.question_id] = { attempts: row.attempts, correct: row.correct, skill: row.skill };
     });
-    (testRes.data || []).forEach(row => {
+    (result.testScores || []).forEach(row => {
       const progress = chapter(row.chapter_id);
       progress.testScores[row.test_id] = row.best_score;
       progress.testAttempts[row.test_id] = row.attempts;
       progress.testsCompleted += row.attempts;
       progress.bestTest = Math.max(progress.bestTest, row.best_score);
     });
-    (stateRes.data || []).forEach(row => {
+    (result.chapterState || []).forEach(row => {
       const progress = chapter(row.chapter_id);
       progress.materialRead = row.material_read;
       progress.reviewsCompleted = row.reviews_completed;
@@ -5395,10 +5385,9 @@ const HSKProgress = (() => {
     const progress = chapter(chapterId);
     const item = (progress.questions[question.id] ||= { attempts:0, correct:0, skill:question.skill });
     item.attempts++; if(correct) item.correct++;
-    queueWrite(`hsk_progress:${chapterId}:${question.id}`, () => supa.from('hsk_progress').upsert({
-      user_id: uid, chapter_id: chapterId, question_id: question.id,
-      attempts: item.attempts, correct: item.correct, skill: question.skill,
-    }).then(({ error }) => { if(error) console.error('HSKProgress.record failed:', error); }));
+    queueWrite(`hsk_progress:${chapterId}:${question.id}`, () => saveData('record-hsk', {
+      chapterId, questionId:question.id, attempts:item.attempts, correct:item.correct, skill:question.skill,
+    }).catch(error => console.error('HSKProgress.record failed:', error)));
   }
   function complete(chapterId, mode, score, testId=null){
     const progress = chapter(chapterId);
@@ -5408,24 +5397,23 @@ const HSKProgress = (() => {
       if(testId){
         progress.testScores[testId] = Math.max(progress.testScores[testId] || 0, score);
         progress.testAttempts[testId] = (progress.testAttempts[testId] || 0) + 1;
-        queueWrite(`hsk_test_scores:${chapterId}:${testId}`, () => supa.from('hsk_test_scores').upsert({
-          user_id: uid, chapter_id: chapterId, test_id: testId,
-          best_score: progress.testScores[testId], attempts: progress.testAttempts[testId],
-        }).then(({ error }) => { if(error) console.error('HSKProgress.complete test upsert failed:', error); }));
+        queueWrite(`hsk_test_scores:${chapterId}:${testId}`, () => saveData('save-hsk-test', {
+          chapterId, testId, bestScore:progress.testScores[testId], attempts:progress.testAttempts[testId],
+        }).catch(error => console.error('HSKProgress.complete test failed:', error)));
       }
     } else {
       progress.reviewsCompleted++;
-      queueWrite(`hsk_chapter_state:${chapterId}`, () => supa.from('hsk_chapter_state').upsert({
-        user_id: uid, chapter_id: chapterId, material_read: progress.materialRead, reviews_completed: progress.reviewsCompleted,
-      }).then(({ error }) => { if(error) console.error('HSKProgress.complete reviews upsert failed:', error); }));
+      queueWrite(`hsk_chapter_state:${chapterId}`, () => saveData('save-hsk-state', {
+        chapterId, materialRead:progress.materialRead, reviewsCompleted:progress.reviewsCompleted,
+      }).catch(error => console.error('HSKProgress.complete reviews failed:', error)));
     }
   }
   function setMaterialRead(chapterId, value){
     const progress = chapter(chapterId);
     progress.materialRead = !!value;
-    queueWrite(`hsk_chapter_state:${chapterId}`, () => supa.from('hsk_chapter_state').upsert({
-      user_id: uid, chapter_id: chapterId, material_read: progress.materialRead, reviews_completed: progress.reviewsCompleted,
-    }).then(({ error }) => { if(error) console.error('HSKProgress.setMaterialRead failed:', error); }));
+    queueWrite(`hsk_chapter_state:${chapterId}`, () => saveData('save-hsk-state', {
+      chapterId, materialRead:progress.materialRead, reviewsCompleted:progress.reviewsCompleted,
+    }).catch(error => console.error('HSKProgress.setMaterialRead failed:', error)));
   }
   return { chapter, record, complete, setMaterialRead, load, clear };
 })();
@@ -5752,13 +5740,9 @@ const HskAlibabaAudio=(()=>{
   let generation=0;
 
   async function fetchAudioResponse(text){
-    const { data:{ session } } = await supa.auth.getSession();
     const response=await fetch('/api/tts',{
       method:'POST',
-      headers:{
-        'Content-Type':'application/json',
-        ...(session?.access_token ? { Authorization:`Bearer ${session.access_token}` } : {}),
-      },
+      headers:{'Content-Type':'application/json'},
       body:JSON.stringify({provider:'alibaba',text})
     });
     if(!response.ok){
@@ -6750,13 +6734,9 @@ function initAssistantChat(){
     updateControls();
 
     try {
-      const { data: { session } } = await supa.auth.getSession();
       const response = await fetch('/api/chat',{
         method:'POST',
-        headers:{
-          'Content-Type':'application/json',
-          ...(session?.access_token ? { Authorization:`Bearer ${session.access_token}` } : {}),
-        },
+        headers:{'Content-Type':'application/json'},
         body:JSON.stringify({
           messages:messagesForRequest(messages)
         })

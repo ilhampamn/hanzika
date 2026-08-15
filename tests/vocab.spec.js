@@ -33,9 +33,9 @@ test.describe('vocab CRUD', () => {
     await expect(row).toBeVisible();
     await expect(row).toContainText('playwright test word');
 
-    // Wait for the real "added" confirmation (fires only once the Supabase
+    // Wait for the real "added" confirmation (fires only once the Neon
     // insert actually lands) before reloading, then confirm it actually
-    // persisted to Supabase, not just the in-memory cache.
+    // persisted to Neon, not just the in-memory cache.
     await expect(page.locator('#toast')).toContainText('Added', { timeout: 10_000 });
     await page.reload();
     await page.click('[data-view="vocab"]');
@@ -78,7 +78,7 @@ test.describe('vocab CRUD', () => {
     await page.locator('.vocab-row', { hasText: '删除' }).locator('[data-action="delete"]').click();
 
     await expect(page.locator('.vocab-row', { hasText: '删除' })).toHaveCount(0);
-    // Wait for the real "deleted" confirmation (fires only once the Supabase
+    // Wait for the real "deleted" confirmation (fires only once the Neon
     // delete actually lands) before reloading — otherwise the reload can race
     // ahead of the background write and the word would incorrectly reappear.
     await expect(page.locator('#toast')).toContainText('Deleted', { timeout: 10_000 });

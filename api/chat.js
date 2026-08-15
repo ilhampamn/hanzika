@@ -2,8 +2,7 @@
 // (request/response shapes) is dictated by the existing frontend code in
 // initAssistantChat() / sendQuestion() — see ASSISTANT_IMPLEMENTATION_PLAN.md.
 
-const SUPABASE_URL = 'https://vertgsgbmtvopwqtigty.supabase.co';
-const SUPABASE_ANON_KEY = 'sb_publishable_Wvh11Vb64FxHavrKNtsTew_BCt9nuPl';
+import { requireUser } from './_lib/auth.js';
 
 const SYSTEM_PROMPT = `You are the in-app learning guide for Hanzika, a Mandarin Chinese
 learning app. You help with: Mandarin vocabulary and grammar, hanzi (Chinese characters),
@@ -78,20 +77,11 @@ async function callGemini(messages) {
   return { ...parseModelJson(text), provider: 'gemini', model: 'gemini-3.1-flash-lite' };
 }
 
-async function verifySession(authHeader) {
-  const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
-  if (!token) return false;
-  const res = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
-    headers: { Authorization: `Bearer ${token}`, apikey: SUPABASE_ANON_KEY },
-  });
-  return res.ok;
-}
-
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed.' });
 
-  const authed = await verifySession(req.headers.authorization);
-  if (!authed) return res.status(401).json({ error: 'You need to be signed in to use the assistant.' });
+  const user = await requireUser(req, res);
+  if (!user) return;
 
   const messages = req.body?.messages;
   if (!Array.isArray(messages) || !messages.length) {

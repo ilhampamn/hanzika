@@ -46,7 +46,7 @@ test.describe('study session', () => {
     await expect(page.locator('#studySummary')).toBeVisible();
 
     // Reload and check the profile — this is the real signal: did the round
-    // actually persist to Supabase (sessions_completed, review_log, activities),
+    // actually persist to Neon (sessions_completed, review_log, activities),
     // not just update the in-memory session that's about to be thrown away.
     await page.reload();
     await page.click('[data-view="profile"]');
