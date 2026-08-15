@@ -4,6 +4,7 @@ import { extname, resolve, sep } from 'node:path';
 import auth from '../api/auth.js';
 import chat from '../api/chat.js';
 import data from '../api/data.js';
+import images from '../api/images.js';
 import status from '../api/status.js';
 import tts from '../api/tts.js';
 
@@ -13,6 +14,7 @@ const handlers = new Map([
   ['/api/auth', auth],
   ['/api/chat', chat],
   ['/api/data', data],
+  ['/api/images', images],
   ['/api/status', status],
   ['/api/tts', tts],
 ]);

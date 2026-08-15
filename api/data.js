@@ -30,22 +30,32 @@ async function mutate(userId, action, payload) {
   const sql = db();
   if (action === 'add-vocab') {
     await sql`insert into vocab_words
-      (id, owner_id, chars, pinyin, meaning, source, hsk_level, tags, examples, image_url)
+      (id, owner_id, chars, pinyin, meaning, source, hsk_level, tags, examples, image_url,
+        image_provider, image_source, image_credit, image_credit_url)
       values (${payload.id}, ${userId}, ${asArray(payload.chars)}, ${JSON.stringify(asArray(payload.pinyin))}::jsonb,
         ${asText(payload.meaning, 500)}, 'custom', ${payload.hskLevel ?? null}, ${asArray(payload.tags)},
-        ${JSON.stringify(asArray(payload.examples))}::jsonb, ${payload.imageUrl || null})`;
+        ${JSON.stringify(asArray(payload.examples))}::jsonb, ${payload.imageUrl || null},
+        ${asText(payload.imageProvider, 50) || null}, ${asText(payload.imageSource, 1000) || null},
+        ${asText(payload.imageCredit, 200) || null}, ${asText(payload.imageCreditUrl, 1000) || null})`;
   } else if (action === 'import-vocab') {
     const rows = asArray(payload.rows).slice(0, 500);
     await Promise.all(rows.map(row => sql`insert into vocab_words
-      (id, owner_id, chars, pinyin, meaning, source, hsk_level, tags, examples, image_url)
+      (id, owner_id, chars, pinyin, meaning, source, hsk_level, tags, examples, image_url,
+        image_provider, image_source, image_credit, image_credit_url)
       values (${row.id}, ${userId}, ${asArray(row.chars)}, ${JSON.stringify(asArray(row.pinyin))}::jsonb,
         ${asText(row.meaning, 500)}, 'custom', ${row.hskLevel ?? null}, ${asArray(row.tags)},
-        ${JSON.stringify(asArray(row.examples))}::jsonb, ${row.imageUrl || null})`));
+        ${JSON.stringify(asArray(row.examples))}::jsonb, ${row.imageUrl || null},
+        ${asText(row.imageProvider, 50) || null}, ${asText(row.imageSource, 1000) || null},
+        ${asText(row.imageCredit, 200) || null}, ${asText(row.imageCreditUrl, 1000) || null})`));
   } else if (action === 'update-vocab') {
     await sql`update vocab_words set chars = ${asArray(payload.chars)},
       pinyin = ${JSON.stringify(asArray(payload.pinyin))}::jsonb, meaning = ${asText(payload.meaning, 500)},
       hsk_level = ${payload.hskLevel ?? null}, tags = ${asArray(payload.tags)},
-      examples = ${JSON.stringify(asArray(payload.examples))}::jsonb, image_url = ${payload.imageUrl || null}
+      examples = ${JSON.stringify(asArray(payload.examples))}::jsonb, image_url = ${payload.imageUrl || null},
+      image_provider = ${asText(payload.imageProvider, 50) || null},
+      image_source = ${asText(payload.imageSource, 1000) || null},
+      image_credit = ${asText(payload.imageCredit, 200) || null},
+      image_credit_url = ${asText(payload.imageCreditUrl, 1000) || null}
       where id = ${payload.id} and owner_id = ${userId} and source = 'custom'`;
   } else if (action === 'delete-vocab') {
     await sql`delete from vocab_words where id = ${payload.id} and owner_id = ${userId} and source = 'custom'`;

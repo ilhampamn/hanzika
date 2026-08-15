@@ -374,6 +374,8 @@ if(typeof gsap === 'undefined'){
   .vocab-row-pinyin{ font-size:13px; font-weight:800; letter-spacing:0.02em; margin-bottom:2px; }
   .vocab-row-pinyin span{ margin-right:6px; }
   .vocab-row-meaning{ font-size:13.5px; font-weight:600; color:var(--text-lo); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .image-credit{ display:block; margin-top:3px; color:var(--text-faint); font-size:9.5px; font-weight:700; }
+  .image-credit a{ color:inherit; text-decoration:underline; text-underline-offset:2px; }
   .vocab-row-badges{ display:flex; gap:6px; flex-shrink:0; align-items:center; }
   .badge{
     font-size:11px; font-weight:800; padding:4px 9px; border-radius:99px;
@@ -382,6 +384,20 @@ if(typeof gsap === 'undefined'){
   }
   .badge-hsk{ color:var(--purple-dk); background:var(--purple-bg); }
   .badge-custom{ color:var(--pink-dk); background:var(--pink-bg); }
+  .badge-image{ display:inline-flex; align-items:center; gap:5px; }
+  .badge-image::before{ content:''; width:7px; height:7px; border-radius:50%; background:currentColor; }
+  .badge-image.has-image{ color:var(--green-dk); background:var(--green-bg); }
+  .badge-image.no-image{ color:var(--text-lo); background:var(--surface-2); }
+  .image-populate-panel{
+    background:var(--surface); border:2px solid var(--border); border-radius:14px;
+    padding:12px 14px; margin:-4px 0 16px;
+  }
+  .image-populate-head{ display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:8px; }
+  .image-populate-label{ font-size:12.5px; font-weight:800; color:var(--text-lo); }
+  .image-populate-count{ font-size:12px; font-weight:900; color:var(--pink-dk); font-variant-numeric:tabular-nums; }
+  .image-populate-track{ height:10px; overflow:hidden; border-radius:99px; background:var(--surface-2); border:1px solid var(--border); }
+  .image-populate-fill{ height:100%; width:0; border-radius:99px; background:var(--pink); transition:width 180ms var(--ease-out); }
+  .image-populate-detail{ margin-top:7px; color:var(--text-faint); font-size:11.5px; font-weight:700; }
   .status-chip{ width:10px; height:10px; border-radius:50%; flex-shrink:0; }
   .row-actions{ display:flex; gap:4px; flex-shrink:0; }
   .row-action-btn{
@@ -615,12 +631,18 @@ if(typeof gsap === 'undefined'){
   .face-back{ padding:20px 22px 18px; justify-content:flex-start; text-align:center; }
   .back-hanzi{ font-family:'Noto Sans SC', sans-serif; font-weight:900; font-size:clamp(30px,8vw,38px); line-height:1; margin-top:8px; }
   .card-image{
+    position:relative;
     width:min(78%,190px); height:118px; border-radius:18px; margin:10px auto 2px; flex-shrink:0;
     background:var(--surface-2); border:2px solid var(--border);
     display:flex; align-items:center; justify-content:center; overflow:hidden;
   }
   .card-image svg{ width:70%; height:70%; }
   .card-image img{ width:100%; height:100%; object-fit:cover; display:block; }
+  .card-image-credit{
+    position:absolute; left:5px; right:5px; bottom:5px; padding:3px 5px; border-radius:7px;
+    color:#fff; background:rgba(0,0,0,.58); font-size:8px; font-weight:750; line-height:1.25;
+  }
+  .card-image-credit a{ color:#fff; text-decoration:underline; text-underline-offset:1px; }
   .hint-wrap{ margin-bottom:15px; display:flex; flex-direction:column; align-items:center; gap:8px; }
   .hint-btn{
     border:2px solid var(--border); background:var(--surface); color:var(--pink);
@@ -1962,6 +1984,7 @@ if(typeof gsap === 'undefined'){
           <p class="view-subtitle" id="vocabSubtitle">—</p>
         </div>
         <div class="view-header-actions">
+          <button class="icon-btn" id="populateImagesBtn"></button>
           <button class="icon-btn" id="importBtn"></button>
           <button class="icon-btn icon-btn-primary" id="addWordBtn"></button>
         </div>
@@ -1969,6 +1992,16 @@ if(typeof gsap === 'undefined'){
 
       <div class="vocab-toolbar">
         <div class="search-wrap"></div>
+      </div>
+      <div class="image-populate-panel" id="imagePopulatePanel" hidden>
+        <div class="image-populate-head">
+          <span class="image-populate-label" id="imagePopulateLabel">Finding images…</span>
+          <span class="image-populate-count" id="imagePopulateCount">0 / 0</span>
+        </div>
+        <div class="image-populate-track" id="imagePopulateTrack" role="progressbar" aria-label="Image population progress" aria-valuemin="0" aria-valuemax="0" aria-valuenow="0">
+          <div class="image-populate-fill" id="imagePopulateFill"></div>
+        </div>
+        <div class="image-populate-detail" id="imagePopulateDetail"></div>
       </div>
       <div class="chip-row" id="levelChips"></div>
       <div class="vocab-list" id="vocabList"></div>
@@ -2999,6 +3032,10 @@ const Store = (() => {
       tags: row.tags || [],
       source: row.source,
       image: row.image_url,
+      imageProvider: row.image_provider || null,
+      imageSource: row.image_source || null,
+      imageCredit: row.image_credit || null,
+      imageCreditUrl: row.image_credit_url || null,
       _ownerId: row.owner_id,
       stats: {
         box: st.box ?? 0,
@@ -3099,7 +3136,10 @@ const Store = (() => {
       id, chars: entry.chars, pinyin: entry.pinyin, meaning: entry.meaning,
       exZh: examples[0]?.zh || '', exEn: examples[0]?.en || '', examples,
       hsk: entry.hsk ?? null, hskChapter: null, tags: entry.tags || [],
-      source: 'custom', image: entry.image || null, _ownerId: authUser.id,
+      source: 'custom', image: entry.image || null,
+      imageProvider:entry.imageProvider || null, imageSource:entry.imageSource || null,
+      imageCredit:entry.imageCredit || null, imageCreditUrl:entry.imageCreditUrl || null,
+      _ownerId: authUser.id,
       stats: { box:0, seen:0, correct:0, streak:0, addedAt: Date.now(), lastReviewedAt:null, dueAt: Date.now() },
     };
     vocab.unshift(word);
@@ -3109,6 +3149,8 @@ const Store = (() => {
     word._persisted = queueWrite(`vocab_words:${id}`, () => saveData('add-vocab', {
       id, chars:entry.chars, pinyin:entry.pinyin, meaning:entry.meaning,
       hskLevel:entry.hsk ?? null, tags:entry.tags || [], examples, imageUrl:entry.image || null,
+      imageProvider:entry.imageProvider || null, imageSource:entry.imageSource || null,
+      imageCredit:entry.imageCredit || null, imageCreditUrl:entry.imageCreditUrl || null,
     }));
     return word;
   }
@@ -3127,12 +3169,17 @@ const Store = (() => {
         id, chars: entry.chars, pinyin: entry.pinyin, meaning: entry.meaning,
         exZh: entry.exZh || examples[0]?.zh || '', exEn: entry.exEn || examples[0]?.en || '', examples,
         hsk: entry.hsk ?? null, hskChapter: null, tags: entry.tags || [],
-        source: 'custom', image: entry.image || null, _ownerId: authUser.id,
+        source: 'custom', image: entry.image || null,
+        imageProvider:entry.imageProvider || null, imageSource:entry.imageSource || null,
+        imageCredit:entry.imageCredit || null, imageCreditUrl:entry.imageCreditUrl || null,
+        _ownerId: authUser.id,
         stats: { box:0, seen:0, correct:0, streak:0, addedAt: Date.now(), lastReviewedAt:null, dueAt: Date.now() },
       };
       vocab.unshift(word);
       rows.push({ id, chars:entry.chars, pinyin:entry.pinyin, meaning:entry.meaning,
-        hskLevel:entry.hsk ?? null, tags:entry.tags || [], examples, imageUrl:entry.image || null });
+        hskLevel:entry.hsk ?? null, tags:entry.tags || [], examples, imageUrl:entry.image || null,
+        imageProvider:entry.imageProvider || null, imageSource:entry.imageSource || null,
+        imageCredit:entry.imageCredit || null, imageCreditUrl:entry.imageCreditUrl || null });
       added++;
     });
     if(rows.length) saveData('import-vocab', { rows }).catch(error => console.error('importVocab failed:', error));
@@ -3150,7 +3197,8 @@ const Store = (() => {
     }
     w._persisted = queueWrite(`vocab_words:${id}`, () => saveData('update-vocab', {
       id, chars:w.chars, pinyin:w.pinyin, meaning:w.meaning, hskLevel:w.hsk, tags:w.tags,
-      examples:w.examples, imageUrl:w.image,
+      examples:w.examples, imageUrl:w.image, imageProvider:w.imageProvider,
+      imageSource:w.imageSource, imageCredit:w.imageCredit, imageCreditUrl:w.imageCreditUrl,
     }));
     return w;
   }
@@ -3296,12 +3344,18 @@ const WikimediaImages = (() => {
   }
 
   async function ensure(word){
-    if(!word || word.image || !word.imageQuery) return word?.image || null;
-    const result = await search(word.imageQuery);
+    if(!word || word.image) return word?.image || null;
+    const primaryMeaning = String(word.meaning || '').split(/[;,(]/)[0].replace(/^to\s+/i,'').trim();
+    const query = word.imageQuery || primaryMeaning;
+    if(!query) return null;
+    word.imageQuery = query;
+    const result = await search(query);
     if(!result) return null;
     word.image = result.url;
+    word.imageProvider = 'Wikimedia Commons';
     word.imageSource = result.source;
     word.imageCredit = result.title;
+    word.imageCreditUrl = result.source;
     return word.image;
   }
 
@@ -3323,20 +3377,73 @@ const WikimediaImages = (() => {
   return { ensure, hydrate };
 })();
 
+const UnsplashImages = (() => {
+  async function ensure(word){
+    if(!word || word.image) return word?.image || null;
+    const primaryMeaning = String(word.meaning || '').split(/[;,(]/)[0].replace(/^to\s+/i,'').trim();
+    const query = word.imageQuery || primaryMeaning;
+    if(!query) return null;
+    word.imageQuery = query;
+    try {
+      const response = await fetch(`/api/images?q=${encodeURIComponent(query)}`);
+      if(!response.ok) throw new Error(`Unsplash proxy HTTP ${response.status}`);
+      const result = (await response.json()).image;
+      if(!result?.url) return null;
+      word.image = result.url;
+      word.imageProvider = result.provider || 'Unsplash';
+      word.imageSource = result.source || '';
+      word.imageCredit = result.credit || '';
+      word.imageCreditUrl = result.creditUrl || result.source || '';
+      return word.image;
+    } catch(error){
+      console.warn('Unsplash image lookup unavailable:', query, error);
+      return null;
+    }
+  }
+  return { ensure };
+})();
+
+const VocabularyImages = {
+  async ensure(word){
+    return await UnsplashImages.ensure(word) || await WikimediaImages.ensure(word);
+  },
+};
+
+function imageCreditHtml(word, className = 'image-credit'){
+  if(!word?.imageProvider || !word.imageCredit) return '';
+  const creditUrl = word.imageCreditUrl || word.imageSource || '';
+  const credit = creditUrl
+    ? `<a href="${escapeHtml(creditUrl)}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">${escapeHtml(word.imageCredit)}</a>`
+    : escapeHtml(word.imageCredit);
+  if(word.imageProvider === 'Unsplash'){
+    const source = word.imageSource
+      ? `<a href="${escapeHtml(word.imageSource)}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">Unsplash</a>`
+      : 'Unsplash';
+    return `<span class="${className}">Photo by ${credit} on ${source}</span>`;
+  }
+  return `<span class="${className}">${credit} · ${escapeHtml(word.imageProvider)}</span>`;
+}
+
 function refreshResolvedImage(word){
   const row = document.querySelector(`.vocab-row[data-id="${word.id}"]`);
-  if(row && word.image){
+  if(row){
     const old = row.querySelector('.vocab-row-thumb');
-    if(old){
+    if(old && word.image){
       old.classList.remove('is-empty');
       old.innerHTML = `<img src="${escapeHtml(word.image)}" alt="" onerror="handleImgError(this,'.vocab-row-thumb')">`;
+    }
+    const badge = row.querySelector('[data-image-status]');
+    if(badge){
+      badge.className = `badge badge-image ${word.image ? 'has-image' : 'no-image'}`;
+      badge.textContent = word.image ? 'Image' : 'No image';
+      badge.title = word.image ? 'This word has an image' : 'This word has no image';
     }
   }
   if(editingId === word.id && word.image){
     pendingImage = word.image;
     document.getElementById('fImageUrl').value = word.image;
     activateImageTab('link');
-    renderImageSlot(word.image);
+    renderImageSlot(word.image, word);
   }
 }
 
@@ -3557,6 +3664,7 @@ document.getElementById('logoutBtnSidebar').innerHTML = ICONS.logout;
 document.getElementById('logoutBtnProfile').innerHTML = ICONS.logout + '<span>Log out</span>';
 document.getElementById('modalCloseBtn').innerHTML = ICONS.close;
 document.getElementById('addWordBtn').innerHTML = ICONS.plus + '<span>Add word</span>';
+document.getElementById('populateImagesBtn').innerHTML = ICONS.photo + '<span>Populate images</span>';
 document.getElementById('importBtn').innerHTML = ICONS.upload + '<span>Import</span>';
 document.getElementById('importCloseBtn').innerHTML = ICONS.close;
 document.getElementById('activityModalCloseBtn').innerHTML = ICONS.close;
@@ -3641,9 +3749,6 @@ function showAppShell(){
   renderCurrentView(currentView);
   history.replaceState(null, '', '#/' + currentView);
   AssistantChat?.onLogin();
-  // Resolve direct Wikimedia thumbnails in the background. The UI stays usable
-  // while links arrive, and cached results appear immediately next time.
-  WikimediaImages.hydrate(Store.getVocab(), (word) => refreshResolvedImage(word));
   return appShell;
 }
 
@@ -3956,6 +4061,86 @@ document.getElementById('profileStudyBtn').addEventListener('click', () => goToV
    VOCABULARY VIEW
    ===================================================================== */
 let vocabFilter = { query:'', level:'all' };
+const imagePopulation = {
+  running:false, total:0, completed:0, succeeded:0, failed:0, hasRun:false,
+};
+
+function missingCustomImages(){
+  return Store.getVocab().filter(word => word.source === 'custom' && !word.image);
+}
+
+function renderImagePopulationControls(){
+  const button = document.getElementById('populateImagesBtn');
+  const panel = document.getElementById('imagePopulatePanel');
+  const missing = missingCustomImages().length;
+  button.disabled = imagePopulation.running || missing === 0;
+  button.innerHTML = ICONS.photo + `<span>${imagePopulation.running
+    ? 'Populating…'
+    : missing ? `Populate ${missing} image${missing === 1 ? '' : 's'}` : 'Images complete'}</span>`;
+
+  panel.hidden = !imagePopulation.running && !imagePopulation.hasRun;
+  if(panel.hidden) return;
+
+  const percent = imagePopulation.total
+    ? Math.round((imagePopulation.completed / imagePopulation.total) * 100)
+    : 100;
+  document.getElementById('imagePopulateLabel').textContent = imagePopulation.running
+    ? 'Finding and saving images…'
+    : 'Image population complete';
+  document.getElementById('imagePopulateCount').textContent = `${imagePopulation.completed} / ${imagePopulation.total}`;
+  document.getElementById('imagePopulateFill').style.width = `${percent}%`;
+  const track = document.getElementById('imagePopulateTrack');
+  track.setAttribute('aria-valuemax', String(imagePopulation.total));
+  track.setAttribute('aria-valuenow', String(imagePopulation.completed));
+  document.getElementById('imagePopulateDetail').textContent =
+    `${imagePopulation.succeeded} saved · ${imagePopulation.failed} not found or failed` +
+    (imagePopulation.running ? '' : ` · ${missing} still without images`);
+}
+
+async function populateMissingImages(){
+  if(imagePopulation.running) return;
+  const pending = missingCustomImages();
+  if(!pending.length){
+    imagePopulation.hasRun = true;
+    renderImagePopulationControls();
+    return;
+  }
+
+  Object.assign(imagePopulation, {
+    running:true, total:pending.length, completed:0, succeeded:0, failed:0, hasRun:true,
+  });
+  renderImagePopulationControls();
+
+  let cursor = 0;
+  const workers = Array.from({ length:Math.min(3, pending.length) }, async () => {
+    while(cursor < pending.length && Store.isAuthed()){
+      const word = pending[cursor++];
+      try {
+        const image = await VocabularyImages.ensure(word);
+        if(!image) throw new Error('No suitable image found');
+        const updated = Store.updateVocab(word.id, { image });
+        const result = await updated._persisted;
+        if(!result.ok) throw new Error(result.error || 'Could not save image');
+        imagePopulation.succeeded++;
+      } catch(error){
+        word.image = null;
+        imagePopulation.failed++;
+        console.warn('Image population failed:', word.meaning, error);
+      }
+      imagePopulation.completed++;
+      refreshResolvedImage(word);
+      renderImagePopulationControls();
+      await new Promise(resolve => setTimeout(resolve, 120));
+    }
+  });
+
+  await Promise.all(workers);
+  imagePopulation.running = false;
+  renderVocabList();
+  showToast(imagePopulation.succeeded
+    ? `Saved ${imagePopulation.succeeded} image${imagePopulation.succeeded === 1 ? '' : 's'}`
+    : 'No suitable images were found');
+}
 
 const LEVEL_CHIPS = [
   { key:'all', label:'All' },
@@ -3993,8 +4178,10 @@ function filteredVocab(){
 
 function renderVocabList(){
   const all = Store.getVocab();
+  const withImages = all.filter(word => Boolean(word.image)).length;
   document.getElementById('vocabSubtitle').textContent =
-    `${all.length} word${all.length === 1 ? '' : 's'} in your deck.`;
+    `${all.length} word${all.length === 1 ? '' : 's'} · ${withImages} with images · ${all.length - withImages} without.`;
+  renderImagePopulationControls();
 
   const list = filteredVocab();
   const container = document.getElementById('vocabList');
@@ -4017,6 +4204,7 @@ function renderVocabList(){
     const pinyinHtml = w.pinyin.map(([p,t]) => `<span style="color:${toneVar(t)}">${escapeHtml(p)}</span>`).join('');
     const chapterLabel = w.hskChapter ? ` · Ch. ${w.hskChapter}` : '';
     const levelBadge = w.source === 'hsk' ? `<span class="badge badge-hsk">HSK ${w.hsk}${chapterLabel}</span>` : `<span class="badge badge-custom">Custom</span>`;
+    const imageBadge = `<span class="badge badge-image ${w.image ? 'has-image' : 'no-image'}" data-image-status title="${w.image ? 'This word has an image' : 'This word has no image'}">${w.image ? 'Image' : 'No image'}</span>`;
     const dueBadge = (st.seen > 0 && st.dueAt <= Date.now()) ? '<span class="badge badge-due">due</span>' : '';
     const dots = [0,1,2,3,4].map(i => `<i class="${i < st.box ? 'on' : ''}"></i>`).join('');
     const dotColor = STATUS_META[statusOf(st.box)].color;
@@ -4031,9 +4219,11 @@ function renderVocabList(){
       <div class="vocab-row-mid">
         <div class="vocab-row-pinyin">${pinyinHtml}</div>
         <div class="vocab-row-meaning">${escapeHtml(w.meaning)}</div>
+        ${imageCreditHtml(w)}
       </div>
       <div class="vocab-row-badges">
         ${levelBadge}
+        ${imageBadge}
         ${dueBadge}
         <span class="strength" title="Strength ${st.box}/5" style="--dot-color:${dotColor}">${dots}</span>
         <span class="row-acc" title="Correct / total reviews">${acc}</span>
@@ -4047,6 +4237,8 @@ function renderVocabList(){
 
   gsap.from('.vocab-row', { opacity:0, y:8, duration:0.25*D, stagger:0.025*D, ease:"power2.out" });
 }
+
+document.getElementById('populateImagesBtn').addEventListener('click', populateMissingImages);
 
 document.getElementById('vocabList').addEventListener('click', e => {
   const row = e.target.closest('.vocab-row');
@@ -4100,10 +4292,10 @@ function openVocabModal(word){
     document.getElementById('fImageUrl').value = img || '';
   }
   pendingImage = img;
-  renderImageSlot(pendingImage);
+  renderImageSlot(pendingImage, word);
   if(word && !img && word.imageQuery){
-    document.getElementById('imageSlotCaption').textContent = 'Finding an image on Wikimedia Commons…';
-    WikimediaImages.ensure(word).then(() => refreshResolvedImage(word));
+    document.getElementById('imageSlotCaption').textContent = 'Finding an image on Unsplash or Wikimedia Commons…';
+    VocabularyImages.ensure(word).then(() => refreshResolvedImage(word));
   }
 
   ['fieldChars','fieldMeaning'].forEach(id => document.getElementById(id).classList.remove('has-error'));
@@ -4138,7 +4330,7 @@ document.getElementById('fImageFile').addEventListener('change', e => {
   reader.readAsDataURL(file);
 });
 
-function renderImageSlot(image){
+function renderImageSlot(image, word = null){
   const slot = document.getElementById('imageSlot');
   const caption = document.getElementById('imageSlotCaption');
   slot.innerHTML = '';
@@ -4158,7 +4350,11 @@ function renderImageSlot(image){
   };
   img.src = image;
   slot.appendChild(img);
-  caption.textContent = image.startsWith('data:') ? 'Uploaded from your device.' : 'Loaded from Wikimedia Commons or your link.';
+  if(word?.imageProvider && word.image === image){
+    caption.innerHTML = imageCreditHtml(word, 'image-credit');
+  } else {
+    caption.textContent = image.startsWith('data:') ? 'Uploaded from your device.' : 'Loaded from your link.';
+  }
 }
 
 function closeVocabModal(){
@@ -4570,10 +4766,15 @@ document.getElementById('saveWordBtn').addEventListener('click', async () => {
   closeVocabModal();
 
   if(editingId){
+    const existingWord = Store.getVocab().find(word => word.id === editingId);
+    const imageChanged = pendingImage !== existingWord?.image;
     const word = Store.updateVocab(editingId, {
       chars: Array.from(chars), pinyin, meaning, examples,
       hsk: hskVal ? parseInt(hskVal,10) : null,
       tags, image: pendingImage,
+      ...(imageChanged ? {
+        imageProvider:null, imageSource:null, imageCredit:null, imageCreditUrl:null,
+      } : {}),
     });
     renderVocabList();
     renderProfile();
@@ -4952,7 +5153,7 @@ function buildCard(word){
     <div class="face face-back">
       <div class="seal">记</div>
       <div class="back-hanzi">${hanziBack}</div>
-      ${word.image ? `<div class="card-image"><img src="${escapeHtml(word.image)}" alt="" onerror="this.parentElement.style.display='none'"></div>` : ''}
+      ${word.image ? `<div class="card-image"><img src="${escapeHtml(word.image)}" alt="Illustration for ${escapeHtml(word.meaning)}" onerror="this.parentElement.style.display='none'">${imageCreditHtml(word, 'card-image-credit')}</div>` : ''}
       <div class="pinyin-display">${pinyinBack}</div>
       <div class="divider"></div>
       <div class="meaning-display">${escapeHtml(word.meaning)}</div>

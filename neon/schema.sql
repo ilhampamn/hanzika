@@ -40,8 +40,16 @@ create table if not exists vocab_words (
   tags text[] not null default '{}',
   examples jsonb not null default '[]',
   image_url text,
+  image_provider text,
+  image_source text,
+  image_credit text,
+  image_credit_url text,
   created_at timestamptz not null default now()
 );
+alter table vocab_words add column if not exists image_provider text;
+alter table vocab_words add column if not exists image_source text;
+alter table vocab_words add column if not exists image_credit text;
+alter table vocab_words add column if not exists image_credit_url text;
 create index if not exists vocab_words_owner_idx on vocab_words (owner_id);
 create index if not exists vocab_words_source_idx on vocab_words (source, hsk_level, hsk_chapter);
 

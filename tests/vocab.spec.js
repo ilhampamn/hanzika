@@ -87,4 +87,46 @@ test.describe('vocab CRUD', () => {
     await page.click('[data-view="vocab"]');
     await expect(page.locator('.vocab-row', { hasText: '删除' })).toHaveCount(0);
   });
+
+  test('populates a missing image, reports progress, and persists it', async ({ page, testUser }) => {
+    await page.route('**/api/images?**', route => route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        image: {
+          url: 'https://images.example.test/playwright-camera.jpg',
+          provider: 'Unsplash',
+          source: 'https://unsplash.com/photos/test?utm_source=hanzika&utm_medium=referral',
+          credit: 'Test Photographer',
+          creditUrl: 'https://unsplash.com/@test?utm_source=hanzika&utm_medium=referral',
+        },
+      }),
+    }));
+    await page.route('https://images.example.test/**', route => route.fulfill({
+      contentType: 'image/svg+xml',
+      body: '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20"><rect width="20" height="20" fill="pink"/></svg>',
+    }));
+
+    await login(page, testUser);
+    await page.click('[data-view="vocab"]');
+    await page.click('#addWordBtn');
+    await fillAndVerify(page, '#fHanzi', '相机');
+    await fillAndVerify(page, '#fMeaning', 'playwright camera');
+    await page.click('#saveWordBtn');
+    await expect(page.locator('#toast')).toContainText('Added', { timeout: 10_000 });
+
+    const row = page.locator('.vocab-row', { hasText: '相机' });
+    await expect(row.locator('[data-image-status]')).toHaveText('No image');
+    await page.click('#populateImagesBtn');
+    await expect(page.locator('#imagePopulatePanel')).toBeVisible();
+    await expect(page.locator('#imagePopulateCount')).toHaveText('1 / 1', { timeout: 10_000 });
+    await expect(page.locator('#imagePopulateDetail')).toContainText('1 saved');
+    await expect(row.locator('[data-image-status]')).toHaveText('Image');
+    await expect(row.locator('.image-credit')).toContainText('Photo by Test Photographer on Unsplash');
+
+    await page.reload();
+    await page.click('[data-view="vocab"]');
+    const persistedRow = page.locator('.vocab-row', { hasText: '相机' });
+    await expect(persistedRow.locator('[data-image-status]')).toHaveText('Image');
+    await expect(persistedRow.locator('.image-credit')).toContainText('Photo by Test Photographer on Unsplash');
+  });
 });
