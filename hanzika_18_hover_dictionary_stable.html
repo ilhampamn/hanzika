@@ -103,6 +103,21 @@ if(typeof gsap === 'undefined'){
 
   .blob{ display:none; }
 
+  .session-restore{
+    position:fixed; inset:0; z-index:100; display:flex; flex-direction:column;
+    align-items:center; justify-content:center; gap:14px; background:var(--bg);
+    color:var(--text-lo); font-size:14px; font-weight:800;
+  }
+  .session-restore-mark{ font-family:'Noto Sans SC', sans-serif; color:var(--pink); font-size:32px; font-weight:900; }
+  .session-restore-spinner{
+    width:24px; height:24px; border:3px solid var(--border); border-top-color:var(--pink);
+    border-radius:50%; animation:sessionRestoreSpin .7s linear infinite;
+  }
+  body:not(.auth-restoring) .session-restore{ display:none; }
+  body.auth-restoring #authView, body.auth-restoring #appShell{ display:none !important; }
+  @keyframes sessionRestoreSpin{ to{ transform:rotate(360deg); } }
+  @media(prefers-reduced-motion:reduce){ .session-restore-spinner{ animation-duration:1.4s; } }
+
   /* =================== AUTH VIEW =================== */
   .auth-view{
     position:relative; z-index:2;
@@ -1221,6 +1236,25 @@ if(typeof gsap === 'undefined'){
   .assistant-history-delete:hover{ background:#fff; color:var(--red-dk); }
   .assistant-history-open:disabled,.assistant-history-delete:disabled{ cursor:wait; opacity:.55; }
 
+  .assistant-task{
+    flex:0 0 auto; padding:10px 12px; border-bottom:2px solid var(--border); background:#fff;
+  }
+  .assistant-task-button{
+    width:100%; display:flex; align-items:center; justify-content:space-between; gap:10px;
+    padding:9px 11px; border:2px solid var(--purple); border-radius:12px;
+    background:var(--purple-bg); color:var(--purple-dk); cursor:pointer;
+    font-size:10.5px; font-weight:900; text-align:left;
+  }
+  .assistant-task-button span:last-child{ color:var(--text-faint); font-size:9px; white-space:nowrap; }
+  .assistant-task-button:disabled{ cursor:not-allowed; opacity:.58; }
+  .assistant-task-progress{ margin-top:8px; }
+  .assistant-task-progress-head{
+    display:flex; justify-content:space-between; gap:8px; margin-bottom:5px;
+    color:var(--text-lo); font-size:9px; font-weight:850;
+  }
+  .assistant-task-track{ height:7px; overflow:hidden; border-radius:99px; background:var(--surface-2); }
+  .assistant-task-fill{ width:0; height:100%; border-radius:99px; background:var(--purple); transition:width 180ms var(--ease-out); }
+
   .assistant-messages{
     flex:1 1 0; width:100%; min-width:0; min-height:0; max-height:100%;
     overflow-x:hidden; overflow-y:auto; padding:18px 14px; background:#fcfcfc;
@@ -1806,10 +1840,16 @@ if(typeof gsap === 'undefined'){
   }
 </style>
 </head>
-<body>
+<body class="auth-restoring">
 
 <div class="blob blob-a"></div>
 <div class="blob blob-b"></div>
+
+<div class="session-restore" id="sessionRestore" role="status" aria-live="polite">
+  <div class="session-restore-mark">汉字卡</div>
+  <div class="session-restore-spinner" aria-hidden="true"></div>
+  <span>Restoring your session…</span>
+</div>
 
 <!-- ============ AUTH VIEW ============ -->
 <section class="auth-view" id="authView">
@@ -2164,6 +2204,22 @@ if(typeof gsap === 'undefined'){
         <span>Saved on this browser</span>
       </div>
       <div class="assistant-history-list" id="assistantHistoryList"></div>
+    </section>
+
+    <section class="assistant-task" aria-label="Qwen tasks">
+      <button class="assistant-task-button" id="reviewExamplesTask" type="button" disabled>
+        <span>Review all vocabulary examples</span>
+        <span id="reviewExamplesTaskCount">Qwen task</span>
+      </button>
+      <div class="assistant-task-progress" id="reviewExamplesProgress" hidden>
+        <div class="assistant-task-progress-head">
+          <span id="reviewExamplesProgressLabel">Reviewing examples…</span>
+          <span id="reviewExamplesProgressCount">0 / 0</span>
+        </div>
+        <div class="assistant-task-track" id="reviewExamplesProgressTrack" role="progressbar" aria-label="Example review progress" aria-valuemin="0" aria-valuemax="0" aria-valuenow="0">
+          <div class="assistant-task-fill" id="reviewExamplesProgressFill"></div>
+        </div>
+      </div>
     </section>
 
     <div class="assistant-messages" id="assistantMessages" aria-live="polite"></div>
@@ -3106,9 +3162,18 @@ const Store = (() => {
   async function restoreSession(){
     try {
       const data = await apiRequest('/api/auth');
-      await loadUserData(data.user);
+      try {
+        await loadUserData(data.user);
+      } catch(firstError){
+        console.warn('Session data restore failed; retrying once:', firstError);
+        await new Promise(resolve => setTimeout(resolve, 300));
+        await loadUserData(data.user);
+      }
       return true;
-    } catch(error){ return false; }
+    } catch(error){
+      clearCache();
+      return false;
+    }
   }
 
   async function signup(name, email, password){
@@ -3164,7 +3229,8 @@ const Store = (() => {
       if(existing.has(key)){ skipped++; return; }
       existing.add(key);
       const id = crypto.randomUUID();
-      const examples = entry.exZh ? [{ zh: entry.exZh, en: entry.exEn || '' }] : (entry.examples || []);
+      const examples = Array.isArray(entry.examples) ? entry.examples.filter(example => example?.zh)
+        : (entry.exZh ? [{ zh: entry.exZh, en: entry.exEn || '' }] : []);
       const word = {
         id, chars: entry.chars, pinyin: entry.pinyin, meaning: entry.meaning,
         exZh: entry.exZh || examples[0]?.zh || '', exEn: entry.exEn || examples[0]?.en || '', examples,
@@ -3767,10 +3833,18 @@ function enterApp(){
 // load — restore it here so a returning user with a still-valid session
 // skips straight past the login screen instead of being asked to sign in again.
 (async () => {
-  const restored = await Store.restoreSession();
-  if(restored){
-    await HSKProgress.load(Store.currentUser().id);
-    showAppShell();
+  try {
+    const restored = await Store.restoreSession();
+    if(restored){
+      await HSKProgress.load(Store.currentUser().id).catch(error => {
+        console.warn('HSK progress restore failed:', error);
+      });
+      showAppShell();
+    }
+  } catch(error){
+    console.error('Session startup failed:', error);
+  } finally {
+    document.body.classList.remove('auth-restoring');
   }
 })();
 
@@ -4469,7 +4543,7 @@ function parseMarkdown(text){
     const word = recordToWord(rec);
     if(word) words.push(word);
   }
-  return words;
+  return mergeImportedWords(words);
 }
 
 // minimal CSV parser (handles quoted fields with commas/newlines)
@@ -4505,7 +4579,27 @@ function parseCSV(text){
     const word = recordToWord(rec);
     if(word) words.push(word);
   }
-  return words;
+  return mergeImportedWords(words);
+}
+
+// Expanded import files may repeat a Hanzi row for each example sentence.
+// Collapse those rows into one word while retaining every unique example.
+function mergeImportedWords(words){
+  const merged = new Map();
+  words.forEach(word => {
+    const key = word.chars.join('');
+    const examples = Array.isArray(word.examples) ? word.examples : [];
+    if(!merged.has(key)){
+      merged.set(key, { ...word, examples:[...examples] });
+      return;
+    }
+    const target = merged.get(key);
+    examples.forEach(example => {
+      const duplicate = target.examples.some(item => item.zh === example.zh && item.en === example.en);
+      if(!duplicate) target.examples.push(example);
+    });
+  });
+  return [...merged.values()];
 }
 
 // turn a raw {chars, pinyin, meaning, ...} record into a proper word object
@@ -4520,6 +4614,7 @@ function recordToWord(rec){
     meaning,
     exZh: rec.exZh || '',
     exEn: rec.exEn || '',
+    examples: rec.exZh ? [{ zh:rec.exZh, en:rec.exEn || '' }] : [],
     hsk: parseHsk(rec.hsk),
     tags: parseTags(rec.tags),
     source: 'custom',
@@ -6389,6 +6484,13 @@ function initAssistantChat(){
   const sendButton = document.getElementById('assistantSend');
   const characterCount = document.getElementById('assistantCharacterCount');
   const statusElement = document.getElementById('assistantStatus');
+  const reviewExamplesTask = document.getElementById('reviewExamplesTask');
+  const reviewExamplesTaskCount = document.getElementById('reviewExamplesTaskCount');
+  const reviewExamplesProgress = document.getElementById('reviewExamplesProgress');
+  const reviewExamplesProgressLabel = document.getElementById('reviewExamplesProgressLabel');
+  const reviewExamplesProgressCount = document.getElementById('reviewExamplesProgressCount');
+  const reviewExamplesProgressTrack = document.getElementById('reviewExamplesProgressTrack');
+  const reviewExamplesProgressFill = document.getElementById('reviewExamplesProgressFill');
   const MAX_CONVERSATIONS = 30;
   const MAX_CONTEXT_MESSAGE_CHARACTERS = 1600;
   const STORAGE_VERSION = 1;
@@ -6401,6 +6503,7 @@ function initAssistantChat(){
   let suggestions = [];
   let pending = false;
   let ready = false;
+  let qwenReady = false;
   let isOpen = false;
   let historyIsOpen = false;
   let previousFocus = null;
@@ -6749,6 +6852,134 @@ function initAssistantChat(){
     messagesElement.scrollTop = messagesElement.scrollHeight;
   }
 
+  function vocabularyExamples(){
+    return Store.getVocab().flatMap(word => (word.examples || []).map((example,index) => ({
+      id:`${word.id}:${index}`,
+      wordId:word.id,
+      exampleIndex:index,
+      hanzi:word.chars.join(''),
+      meaning:word.meaning,
+      chinese:String(example.zh || '').trim(),
+      translation:String(example.en || '').trim(),
+    })).filter(example => example.chinese));
+  }
+
+  function updateReviewTaskControls(){
+    const count = Store.isAuthed() ? vocabularyExamples().length : 0;
+    reviewExamplesTaskCount.textContent = count ? `${count.toLocaleString()} example${count === 1 ? '' : 's'}` : 'No examples';
+    reviewExamplesTask.disabled = pending || !qwenReady || count === 0;
+    reviewExamplesTask.title = !qwenReady
+      ? 'This task requires Qwen'
+      : count ? `Review ${count} examples with Qwen` : 'Add vocabulary examples first';
+  }
+
+  function setReviewProgress(completed,total,label='Reviewing examples…'){
+    const percent = total ? Math.round(completed / total * 100) : 0;
+    reviewExamplesProgress.hidden = false;
+    reviewExamplesProgressLabel.textContent = label;
+    reviewExamplesProgressCount.textContent = `${completed.toLocaleString()} / ${total.toLocaleString()}`;
+    reviewExamplesProgressFill.style.width = `${percent}%`;
+    reviewExamplesProgressTrack.setAttribute('aria-valuemax',String(total));
+    reviewExamplesProgressTrack.setAttribute('aria-valuenow',String(completed));
+  }
+
+  async function requestExampleReview(batch){
+    let lastError = null;
+    for(let attempt=0; attempt<2; attempt++){
+      try {
+        const response = await fetch('/api/review-examples',{
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({examples:batch}),
+        });
+        const data = await response.json().catch(() => ({}));
+        if(!response.ok) throw new Error(data.error || `Review request failed (${response.status}).`);
+        if(!Array.isArray(data.reviews) || data.reviews.length !== batch.length){
+          throw new Error('Qwen returned an incomplete review batch.');
+        }
+        return data.reviews;
+      } catch(error){
+        lastError = error;
+        if(attempt === 0) await new Promise(resolve => setTimeout(resolve,500));
+      }
+    }
+    throw lastError;
+  }
+
+  function exampleReviewReport(examples,reviews){
+    const examplesById = new Map(examples.map(example => [example.id,example]));
+    const issues = reviews.filter(review => !review.natural || review.severity !== 'ok');
+    const naturalCount = reviews.length - issues.length;
+    const wordCount = new Set(examples.map(example => example.wordId)).size;
+    const sections = [
+      '## Qwen vocabulary example review',
+      `Reviewed ${reviews.length} examples across ${wordCount} vocabulary words.`,
+      `- Natural: ${naturalCount}`,
+      `- Needs attention: ${issues.length}`,
+      `- Major issues: ${issues.filter(review => review.severity === 'major').length}`,
+      `- Minor issues: ${issues.filter(review => review.severity === 'minor').length}`,
+    ];
+    if(!issues.length){
+      sections.push('## Result','Every reviewed example reads naturally and matches its vocabulary meaning.');
+      return sections.join('\n\n');
+    }
+    sections.push('## Examples needing attention');
+    issues.forEach((review,index) => {
+      const example = examplesById.get(review.id);
+      if(!example) return;
+      sections.push(
+        `### ${index+1}. ${example.hanzi} · Example ${example.exampleIndex+1} · ${review.severity}`,
+        `Original Chinese: ${example.chinese}`,
+        `Original translation: ${example.translation || '(missing)'}`,
+        `Issue: ${review.issue || 'The sentence or translation is not fully natural.'}`,
+        `Suggested Chinese: ${review.suggestedChinese || example.chinese}`,
+        `Suggested translation: ${review.suggestedTranslation || example.translation || '(missing)'}`,
+      );
+    });
+    return sections.join('\n\n');
+  }
+
+  async function runExampleReviewTask(){
+    if(pending || !qwenReady) return;
+    const examples = vocabularyExamples();
+    if(!examples.length) return;
+    const generation = sessionGeneration;
+    const question = `Review all ${examples.length} vocabulary examples for natural Mandarin and accurate translations.`;
+    pending = true;
+    suggestions = [];
+    messagesElement.querySelector('.assistant-followups')?.remove();
+    messages.push({role:'user',content:question});
+    createMessage('user',question);
+    saveActiveConversation();
+    updateControls();
+    setReviewProgress(0,examples.length);
+
+    try {
+      const reviews = [];
+      const batchSize = 10;
+      for(let offset=0; offset<examples.length; offset+=batchSize){
+        const batch = examples.slice(offset,offset+batchSize);
+        reviews.push(...await requestExampleReview(batch));
+        if(generation !== sessionGeneration) return;
+        setReviewProgress(reviews.length,examples.length);
+      }
+      const report = exampleReviewReport(examples,reviews);
+      createMessage('assistant',report);
+      messages.push({role:'assistant',content:report});
+      setReviewProgress(examples.length,examples.length,'Review complete');
+      setStatus('ready','Alibaba Qwen · qwen-plus · review complete');
+      saveActiveConversation();
+    } catch(error){
+      if(generation !== sessionGeneration) return;
+      createMessage('assistant',`The example review stopped: ${error.message} No vocabulary was changed.`,false,true);
+      setReviewProgress(0,examples.length,'Review stopped');
+    } finally {
+      if(generation !== sessionGeneration) return;
+      pending = false;
+      updateControls();
+    }
+  }
+
   function renderSuggestions(items){
     messagesElement.querySelector('.assistant-followups')?.remove();
     if(!items.length) return;
@@ -6873,6 +7104,7 @@ function initAssistantChat(){
     historyList.querySelectorAll('.assistant-history-open,.assistant-history-delete').forEach(button => {
       button.disabled = pending;
     });
+    updateReviewTaskControls();
   }
 
   function setStatus(state,text){
@@ -6899,6 +7131,7 @@ function initAssistantChat(){
   async function checkStatus(){
     const generation = sessionGeneration;
     ready = false;
+    qwenReady = false;
     setStatus('','Checking assistant…');
     updateControls();
     try {
@@ -6908,6 +7141,7 @@ function initAssistantChat(){
       if(generation !== sessionGeneration) return;
       if(!status.qwen && !status.gemini) throw new Error();
       ready = true;
+      qwenReady = Boolean(status.qwen);
       if(status.qwen){
         const backup = status.gemini ? ' · Gemini backup ready' : ' · no backup';
         setStatus('ready',`${chatModelLabel('qwen',status.qwenChatModel)}${backup}`);
@@ -6917,6 +7151,7 @@ function initAssistantChat(){
     } catch(error){
       if(generation !== sessionGeneration) return;
       ready = false;
+      qwenReady = false;
       setStatus('error','Assistant unavailable');
     }
     if(generation === sessionGeneration) updateControls();
@@ -6988,6 +7223,7 @@ function initAssistantChat(){
     bubble.setAttribute('aria-expanded','true');
     if(topToggle){ topToggle.classList.add('is-pressed'); topToggle.setAttribute('aria-pressed','true'); }
     syncResponsiveMode();
+    updateReviewTaskControls();
     window.requestAnimationFrame(() => {
       messagesElement.scrollTop = messagesElement.scrollHeight;
       input.focus({preventScroll:true});
@@ -7014,6 +7250,7 @@ function initAssistantChat(){
     messages = [];
     suggestions = [];
     pending = false;
+    reviewExamplesProgress.hidden = true;
     loadConversations();
     if(activeConversationId){
       const active = conversations.find(record => record.id === activeConversationId);
@@ -7038,6 +7275,8 @@ function initAssistantChat(){
     suggestions = [];
     pending = false;
     ready = false;
+    qwenReady = false;
+    reviewExamplesProgress.hidden = true;
     input.value = '';
     renderWelcome();
     renderHistory();
@@ -7050,6 +7289,7 @@ function initAssistantChat(){
   closeButton.addEventListener('click',closePanel);
   newChatButton.addEventListener('click',startNewConversation);
   historyToggle.addEventListener('click',() => setHistoryOpen(!historyIsOpen));
+  reviewExamplesTask.addEventListener('click',runExampleReviewTask);
   form.addEventListener('submit',event => {
     event.preventDefault();
     const question = input.value.trim();

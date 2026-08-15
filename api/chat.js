@@ -35,10 +35,11 @@ function parseModelJson(text) {
 }
 
 async function callQwen(messages) {
+  const apiKey = process.env.QWEN_API_KEY || process.env.DASHSCOPE_API_KEY;
   const res = await fetch('https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions', {
     method: 'POST',
     headers: {
-      Authorization: `Bearer ${process.env.QWEN_API_KEY}`,
+      Authorization: `Bearer ${apiKey}`,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
@@ -92,13 +93,14 @@ export default async function handler(req, res) {
     .map(m => ({ role: m.role, content: m.content.trim() }));
   if (!clean.length) return res.status(400).json({ error: 'No valid messages provided.' });
 
-  if (!process.env.QWEN_API_KEY && !process.env.GEMINI_API_KEY) {
+  const hasQwen = Boolean(process.env.QWEN_API_KEY || process.env.DASHSCOPE_API_KEY);
+  if (!hasQwen && !process.env.GEMINI_API_KEY) {
     return res.status(503).json({ error: 'Assistant is not configured.' });
   }
 
   let result = null;
   let fallbackUsed = false;
-  if (process.env.QWEN_API_KEY) {
+  if (hasQwen) {
     try {
       result = await callQwen(clean);
     } catch (err) {
@@ -108,7 +110,7 @@ export default async function handler(req, res) {
   if (!result && process.env.GEMINI_API_KEY) {
     try {
       result = await callGemini(clean);
-      fallbackUsed = Boolean(process.env.QWEN_API_KEY);
+      fallbackUsed = hasQwen;
     } catch (err) {
       console.error('Gemini failed:', err.message);
     }

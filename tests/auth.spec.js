@@ -40,6 +40,25 @@ test.describe('auth', () => {
     await expect(page.locator('#sidebarEmail')).toHaveText(testUser.email);
   });
 
+  test('shows session restoration instead of flashing the login form on reload', async ({ page, testUser }) => {
+    await page.goto(APP_URL);
+    await page.fill('#authEmail', testUser.email);
+    await page.fill('#authPassword', testUser.password);
+    await page.click('#authForm button[type="submit"]');
+    await expect(page.locator('#appShell')).toBeVisible();
+
+    await page.route('**/api/auth', async route => {
+      if(route.request().method() === 'GET') await new Promise(resolve => setTimeout(resolve, 700));
+      await route.continue();
+    });
+    await page.reload({ waitUntil:'domcontentloaded' });
+
+    await expect(page.locator('#sessionRestore')).toBeVisible();
+    await expect(page.locator('#authView')).toBeHidden();
+    await expect(page.locator('#appShell')).toBeVisible({ timeout:10_000 });
+    await expect(page.locator('#sidebarEmail')).toHaveText(testUser.email);
+  });
+
   test('an incorrect password is rejected with a real error, not a silent failure', async ({ page, testUser }) => {
     await page.goto(APP_URL);
     await page.fill('#authEmail', testUser.email);

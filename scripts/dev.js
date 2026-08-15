@@ -5,6 +5,7 @@ import auth from '../api/auth.js';
 import chat from '../api/chat.js';
 import data from '../api/data.js';
 import images from '../api/images.js';
+import reviewExamples from '../api/review-examples.js';
 import status from '../api/status.js';
 import tts from '../api/tts.js';
 
@@ -15,6 +16,7 @@ const handlers = new Map([
   ['/api/chat', chat],
   ['/api/data', data],
   ['/api/images', images],
+  ['/api/review-examples', reviewExamples],
   ['/api/status', status],
   ['/api/tts', tts],
 ]);

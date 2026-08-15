@@ -129,4 +129,39 @@ test.describe('vocab CRUD', () => {
     await expect(persistedRow.locator('[data-image-status]')).toHaveText('Image');
     await expect(persistedRow.locator('.image-credit')).toContainText('Photo by Test Photographer on Unsplash');
   });
+
+  test('merges repeated Markdown rows into examples for one word', async ({ page, testUser }) => {
+    const markdown = `| Hanzi | Pinyin | Meaning | Example (中文) | Translation | HSK | Tags |
+|---|---|---|---|---|---|---|
+| 测例 | cè lì | test example | 这是第一个例子。 | This is the first example. | 4 | testing |
+| 测例 | cè lì | test example | 这是第二个例子。 | This is the second example. | 4 | testing |
+| 测例 | cè lì | test example | 这是第三个例子。 | This is the third example. | 4 | testing |`;
+
+    await login(page, testUser);
+    await page.click('[data-view="vocab"]');
+    await page.click('#importBtn');
+    await page.setInputFiles('#importFileInput', {
+      name: 'expanded-examples.md',
+      mimeType: 'text/markdown',
+      buffer: Buffer.from(markdown),
+    });
+    await expect(page.locator('#dropzoneSub')).toHaveText('1 word found');
+
+    const persisted = page.waitForResponse(response =>
+      response.url().endsWith('/api/data') && response.request().method() === 'POST' && response.ok()
+    );
+    await page.click('#importConfirmBtn');
+    await persisted;
+
+    await page.reload();
+    await page.click('[data-view="vocab"]');
+    const row = page.locator('.vocab-row', { hasText: '测例' });
+    await expect(row).toBeVisible();
+    await row.locator('[data-action="edit"]').click();
+    await expect(page.locator('#exampleRows .example-row')).toHaveCount(3);
+    const examples = page.locator('#exampleRows .ex-zh-input');
+    await expect(examples.nth(0)).toHaveValue('这是第一个例子。');
+    await expect(examples.nth(1)).toHaveValue('这是第二个例子。');
+    await expect(examples.nth(2)).toHaveValue('这是第三个例子。');
+  });
 });

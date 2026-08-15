@@ -10,7 +10,10 @@
     "test:e2e:ui": "node --env-file=.env node_modules/.bin/playwright test --ui"
   },
   "dependencies": {
-    "@neondatabase/serverless": "^1.0.0"
+    "@ai-sdk/alibaba": "^2.0.32",
+    "@neondatabase/serverless": "^1.0.0",
+    "ai": "^7.0.66",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@playwright/test": "^1.62.1"

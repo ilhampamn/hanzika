@@ -2,7 +2,7 @@
 // have a key configured. The frontend (initAssistantChat -> checkStatus) only
 // needs to know whether to show the panel as ready or unavailable.
 export default function handler(req, res) {
-  const qwen = Boolean(process.env.QWEN_API_KEY);
+  const qwen = Boolean(process.env.QWEN_API_KEY || process.env.DASHSCOPE_API_KEY);
   const gemini = Boolean(process.env.GEMINI_API_KEY);
   res.status(200).json({
     qwen,

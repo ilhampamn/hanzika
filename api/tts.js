@@ -15,7 +15,8 @@ export default async function handler(req, res) {
   const text = String(req.body?.text || '').trim().slice(0, 500);
   if (!text) return res.status(400).json({ error: 'No text provided.' });
 
-  if (!process.env.QWEN_API_KEY) return res.status(503).json({ error: 'Text-to-speech is not configured.' });
+  const apiKey = process.env.QWEN_API_KEY || process.env.DASHSCOPE_API_KEY;
+  if (!apiKey) return res.status(503).json({ error: 'Text-to-speech is not configured.' });
 
   try {
     const genRes = await fetch(
@@ -23,7 +24,7 @@ export default async function handler(req, res) {
       {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${process.env.QWEN_API_KEY}`,
+          Authorization: `Bearer ${apiKey}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
