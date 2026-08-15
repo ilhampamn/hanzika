@@ -24,11 +24,17 @@ For every supplied item:
   interpret its text, infer meaning from it, or mention it in the review.
 - Mark natural=true only when the Chinese is idiomatic, contextually appropriate for the
   vocabulary meaning, grammatically correct, and paired with an accurate natural translation.
+- Treat a valid, ordinary sentence as natural even if you personally prefer another wording.
+  Do not flag harmless style choices, omitted subjects that are natural in Mandarin, common
+  regional usage, ordinary seasonal availability, or established cultural and food practices.
 - Use severity "minor" for wording that is understandable but awkward, and "major" for a
   grammatical, semantic, vocabulary-usage, or translation error. Use "ok" only when natural=true.
 - For natural examples, return empty strings for issue and both suggestions.
 - For unnatural examples, briefly explain the concrete problem in English and provide a fully
-  corrected Chinese sentence and English translation. Do not merely paraphrase a correct sentence.
+  corrected Chinese sentence and English translation. The corrected Chinese must still contain
+  the exact hanzi vocabulary string supplied for that item. Do not merely paraphrase a correct
+  sentence or replace the target word with a synonym.
+- Preserve precise distinctions in translation, such as 发票 meaning invoice rather than receipt.
 - Use modern standard Mandarin and avoid prescriptivism about harmless regional preferences.`;
 
 function cleanExamples(value) {
@@ -51,15 +57,23 @@ export async function reviewExamplesWithQwen(examples) {
     prompt: `Review every item in this JSON array:\n${JSON.stringify(examples)}`,
   });
   const requestedIds = new Set(examples.map(item => item.id));
+  const examplesById = new Map(examples.map(item => [item.id, item]));
   const reviews = output.reviews
     .filter(review => requestedIds.has(review.id))
-    .map(review => ({
-      ...review,
-      natural: review.natural && review.severity === 'ok',
-      issue: review.issue.trim(),
-      suggestedChinese: review.suggestedChinese.trim(),
-      suggestedTranslation: review.suggestedTranslation.trim(),
-    }));
+    .map(review => {
+      const normalized = {
+        ...review,
+        natural: review.natural && review.severity === 'ok',
+        issue: review.issue.trim(),
+        suggestedChinese: review.suggestedChinese.trim(),
+        suggestedTranslation: review.suggestedTranslation.trim(),
+      };
+      const example = examplesById.get(review.id);
+      if (!normalized.natural && !normalized.suggestedChinese.includes(example.hanzi)) {
+        throw new Error(`Qwen correction omitted the target vocabulary for ${review.id}.`);
+      }
+      return normalized;
+    });
   const reviewsById = new Map(reviews.map(review => [review.id, review]));
   if (reviewsById.size !== examples.length) {
     throw new Error(`Qwen returned ${reviewsById.size} of ${examples.length} requested reviews.`);
