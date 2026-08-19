@@ -5,16 +5,30 @@ const asArray = value => Array.isArray(value) ? value : [];
 const asInt = (value, fallback = 0) => Number.isFinite(Number(value)) ? Math.round(Number(value)) : fallback;
 const asText = (value, max = 200) => String(value ?? '').slice(0, max);
 
-async function bootstrap(userId) {
+async function bootstrap(user) {
   const sql = db();
-  const [profiles, words, stats, reviewLog, activities] = await Promise.all([
-    sql`select * from profiles where id = ${userId} limit 1`,
-    sql`select * from vocab_words where owner_id is null or owner_id = ${userId} order by created_at desc`,
-    sql`select * from vocab_stats where user_id = ${userId}`,
-    sql`select ts, knew, miss_reason from review_log where user_id = ${userId} order by ts asc`,
-    sql`select * from activities where user_id = ${userId} order by ts asc`,
+  const [words, stats, reviewLog, activities] = await Promise.all([
+    sql`select * from vocab_words where owner_id is null or owner_id = ${user.id} order by created_at desc`,
+    sql`select * from vocab_stats where user_id = ${user.id}`,
+    sql`select ts, knew, miss_reason from review_log where user_id = ${user.id} order by ts asc`,
+    // Keep this as a calendar date. Neon deserializes a bare Postgres `date`
+    // into a JavaScript Date at local midnight, which JSON can shift to the
+    // previous UTC day (for example, Aug 15 in UTC+8 becomes Aug 14T16:00Z).
+    sql`select id, user_id, ts, activity_date::text as activity_date, kind, mode,
+        mode_label, scope_label, item_count, unit, correct, incorrect, accuracy
+      from activities where user_id = ${user.id} order by ts asc`,
   ]);
-  return { profile: profiles[0], words, stats, reviewLog, activities };
+  return {
+    user: { id:user.id, email:user.email, name:user.name },
+    profile: {
+      id:user.id,
+      name:user.name,
+      sessions_completed:user.sessions_completed,
+      last_studied_at:user.last_studied_at,
+      created_at:user.created_at,
+    },
+    words, stats, reviewLog, activities,
+  };
 }
 async function loadHsk(userId) {
   const sql = db();
@@ -81,10 +95,16 @@ async function mutate(userId, action, payload) {
         ${asText(payload.mode, 30)}, ${asText(payload.modeLabel, 80)}, ${asText(payload.scopeLabel, 140)},
         ${asInt(payload.itemCount)}, ${payload.unit === 'questions' ? 'questions' : 'words'},
         ${asInt(payload.correct)}, ${asInt(payload.incorrect)}, ${payload.accuracy ?? null})
+      on conflict (id) do nothing
       returning 1
     )
-    update profiles set sessions_completed = ${asInt(payload.sessionsCompleted)}, last_studied_at = ${payload.ts}
-    where id = ${userId}`;
+    update profiles set sessions_completed = profiles.sessions_completed + 1,
+      last_studied_at = case
+        when profiles.last_studied_at is null or profiles.last_studied_at < ${payload.ts}
+          then ${payload.ts}
+        else profiles.last_studied_at
+      end
+    where id = ${userId} and exists (select 1 from activity_write)`;
   } else if (action === 'record-hsk') {
     await sql`insert into hsk_progress (user_id, chapter_id, question_id, attempts, correct, skill)
       values (${userId}, ${asText(payload.chapterId, 100)}, ${asText(payload.questionId, 100)},
@@ -113,7 +133,7 @@ export default async function handler(req, res) {
     if (!user) return;
     if (req.method === 'GET') {
       const scope = String(req.query?.scope || 'bootstrap');
-      if (scope === 'bootstrap') return res.status(200).json(await bootstrap(user.id));
+      if (scope === 'bootstrap') return res.status(200).json(await bootstrap(user));
       if (scope === 'hsk') return res.status(200).json(await loadHsk(user.id));
       return res.status(400).json({ error: 'Unknown data scope.' });
     }

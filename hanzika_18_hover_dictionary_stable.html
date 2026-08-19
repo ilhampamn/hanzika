@@ -103,20 +103,10 @@ if(typeof gsap === 'undefined'){
 
   .blob{ display:none; }
 
-  .session-restore{
-    position:fixed; inset:0; z-index:100; display:flex; flex-direction:column;
-    align-items:center; justify-content:center; gap:14px; background:var(--bg);
-    color:var(--text-lo); font-size:14px; font-weight:800;
-  }
-  .session-restore-mark{ font-family:'Noto Sans SC', sans-serif; color:var(--pink); font-size:32px; font-weight:900; }
-  .session-restore-spinner{
-    width:24px; height:24px; border:3px solid var(--border); border-top-color:var(--pink);
-    border-radius:50%; animation:sessionRestoreSpin .7s linear infinite;
-  }
-  body:not(.auth-restoring) .session-restore{ display:none; }
-  body.auth-restoring #authView, body.auth-restoring #appShell{ display:none !important; }
-  @keyframes sessionRestoreSpin{ to{ transform:rotate(360deg); } }
-  @media(prefers-reduced-motion:reduce){ .session-restore-spinner{ animation-duration:1.4s; } }
+  /* A returning user sees the cached app shell immediately while fresh data
+     syncs in the background. There is no full-screen startup loader. */
+  body.has-session-hint #authView{ display:none !important; }
+  body.has-session-hint #appShell[hidden]{ display:flex !important; }
 
   /* =================== AUTH VIEW =================== */
   .auth-view{
@@ -1840,16 +1830,17 @@ if(typeof gsap === 'undefined'){
   }
 </style>
 </head>
-<body class="auth-restoring">
+<body>
+<script>
+try {
+  if(sessionStorage.getItem('hanzika_bootstrap_cache_v1') || localStorage.getItem('hanzika_authenticated_v1') === '1'){
+    document.body.classList.add('has-session-hint');
+  }
+} catch(_) {}
+</script>
 
 <div class="blob blob-a"></div>
 <div class="blob blob-b"></div>
-
-<div class="session-restore" id="sessionRestore" role="status" aria-live="polite">
-  <div class="session-restore-mark">汉字卡</div>
-  <div class="session-restore-spinner" aria-hidden="true"></div>
-  <span>Restoring your session…</span>
-</div>
 
 <!-- ============ AUTH VIEW ============ -->
 <section class="auth-view" id="authView">
@@ -3031,12 +3022,16 @@ async function apiRequest(path, options = {}){
     },
   });
   const data = await response.json().catch(() => ({}));
-  if(!response.ok) throw new Error(data.error || `Request failed (${response.status}).`);
+  if(!response.ok){
+    const error = new Error(data.error || `Request failed (${response.status}).`);
+    error.status = response.status;
+    throw error;
+  }
   return data;
 }
 
-function saveData(action, payload){
-  return apiRequest('/api/data', { method:'POST', body:JSON.stringify({ action, payload }) });
+function saveData(action, payload, options = {}){
+  return apiRequest('/api/data', { method:'POST', body:JSON.stringify({ action, payload }), ...options });
 }
 
 // Background writes to the same row (e.g. two rapid reviews of the same word)
@@ -3060,6 +3055,9 @@ function queueWrite(key, fn){
 }
 
 const Store = (() => {
+  const PENDING_COMPLETIONS_KEY = 'hanzika_pending_completions_v1';
+  const BOOTSTRAP_CACHE_KEY = 'hanzika_bootstrap_cache_v1';
+  const AUTH_HINT_KEY = 'hanzika_authenticated_v1';
   let authUser = null;   // authenticated user returned by /api/auth
   let profile = null;    // { id, name, sessionsCompleted, lastStudied, joined }
   let vocab = [];         // app-shaped word objects, cached in memory
@@ -3070,6 +3068,53 @@ const Store = (() => {
   function localDateKey(ts = Date.now()){
     const d = new Date(ts);
     return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  }
+
+  function readPendingCompletions(){
+    try {
+      const value = JSON.parse(localStorage.getItem(PENDING_COMPLETIONS_KEY) || '[]');
+      return Array.isArray(value) ? value.filter(item => item?.userId && item?.payload?.id) : [];
+    } catch(error){
+      console.warn('Could not read pending study completions:', error);
+      return [];
+    }
+  }
+
+  function writePendingCompletions(items){
+    try {
+      if(items.length) localStorage.setItem(PENDING_COMPLETIONS_KEY, JSON.stringify(items));
+      else localStorage.removeItem(PENDING_COMPLETIONS_KEY);
+    } catch(error){
+      console.warn('Could not save pending study completions:', error);
+    }
+  }
+
+  function rememberPendingCompletion(userId, payload){
+    const items = readPendingCompletions().filter(item => item.payload.id !== payload.id);
+    items.push({ userId, payload });
+    writePendingCompletions(items);
+  }
+
+  function forgetPendingCompletion(userId, activityId){
+    writePendingCompletions(readPendingCompletions().filter(item => item.userId !== userId || item.payload.id !== activityId));
+  }
+
+  function pendingCompletionsFor(userId){
+    return readPendingCompletions().filter(item => item.userId === userId);
+  }
+
+  async function flushPendingCompletions(userId){
+    for(const item of pendingCompletionsFor(userId)){
+      try {
+        // keepalive lets the browser finish this small write even if a reload
+        // begins while the completion request is in flight.
+        await saveData('complete-session', item.payload, { keepalive:true });
+      } catch(error){
+        // Keep the outbox item. It is also merged into the local calendar
+        // below and will be retried on the next authenticated page load.
+        console.warn('Pending study completion will be retried:', error);
+      }
+    }
   }
 
   function dbRowToWord(row, statsRow){
@@ -3121,20 +3166,59 @@ const Store = (() => {
     };
   }
 
-  function clearCache(){
-    authUser = null; profile = null; vocab = []; reviewLog = []; completionDays = {};
+  function completionPayloadToEntry(payload){
+    return {
+      id:payload.id,
+      ts:new Date(payload.ts).getTime(),
+      kind:payload.kind,
+      mode:payload.mode,
+      modeLabel:payload.modeLabel,
+      scopeLabel:payload.scopeLabel,
+      itemCount:payload.itemCount,
+      unit:payload.unit,
+      correct:payload.correct,
+      incorrect:payload.incorrect,
+      accuracy:payload.accuracy,
+    };
   }
 
-  async function loadUserData(user){
+  function markAuthenticated(){
+    try { localStorage.setItem(AUTH_HINT_KEY, '1'); } catch(_) {}
+  }
+
+  function cacheBootstrap(user, result){
+    try { sessionStorage.setItem(BOOTSTRAP_CACHE_KEY, JSON.stringify({ user, result })); }
+    catch(error){ console.warn('Could not cache the latest app data:', error); }
+    markAuthenticated();
+  }
+
+  function clearBootstrapCache(){
+    try { sessionStorage.removeItem(BOOTSTRAP_CACHE_KEY); } catch(_) {}
+    try { localStorage.removeItem(AUTH_HINT_KEY); } catch(_) {}
+  }
+
+  function clearCache(){
+    authUser = null; profile = null; vocab = []; reviewLog = []; completionDays = {};
+    clearBootstrapCache();
+  }
+
+  function hydrateUserData(user, result){
     authUser = user;
     const uid = user.id;
-    const result = await apiRequest('/api/data?scope=bootstrap');
     const p = result.profile || { id: uid, name: user.email.split('@')[0], sessions_completed: 0, last_studied_at: null, created_at: new Date().toISOString() };
+    const serverActivityIds = new Set((result.activities || []).map(row => row.id));
+    // A write may have landed even if its response was lost during refresh.
+    // The activity id is authoritative, so clear those stale outbox copies.
+    pendingCompletionsFor(uid).forEach(item => {
+      if(serverActivityIds.has(item.payload.id)) forgetPendingCompletion(uid, item.payload.id);
+    });
+    const unsavedCompletions = pendingCompletionsFor(uid).filter(item => !serverActivityIds.has(item.payload.id));
+    const latestPendingTs = unsavedCompletions.reduce((latest,item) => Math.max(latest, new Date(item.payload.ts).getTime() || 0), 0);
     profile = {
       id: p.id, name: p.name, email: user.email,
       joined: new Date(p.created_at).getTime(),
-      sessionsCompleted: p.sessions_completed,
-      lastStudied: p.last_studied_at ? new Date(p.last_studied_at).getTime() : null,
+      sessionsCompleted: p.sessions_completed + unsavedCompletions.length,
+      lastStudied: Math.max(p.last_studied_at ? new Date(p.last_studied_at).getTime() : 0, latestPendingTs) || null,
     };
     const statsByWord = new Map((result.stats || []).map(s => [s.word_id, s]));
     vocab = (result.words || []).map(row => dbRowToWord(row, statsByWord.get(row.id))).sort((a,b) => b.stats.addedAt - a.stats.addedAt);
@@ -3146,6 +3230,36 @@ const Store = (() => {
       rec.words += row.item_count;
       rec.activities.push(activityRowToEntry(row));
     });
+    unsavedCompletions.forEach(item => {
+      const payload = item.payload;
+      const rec = (completionDays[payload.activityDate] ||= { rounds:0, words:0, activities:[] });
+      rec.rounds += 1;
+      rec.words += Number(payload.itemCount) || 0;
+      rec.activities.push(completionPayloadToEntry(payload));
+    });
+  }
+
+  async function loadUserData(user, bootstrapResult = null){
+    const result = bootstrapResult || await apiRequest('/api/data?scope=bootstrap');
+    const resolvedUser = result.user || user;
+    hydrateUserData(resolvedUser, result);
+    cacheBootstrap(resolvedUser, result);
+    // Completion recovery must never hold the screen hostage. Pending items
+    // are already merged into the in-memory calendar and replay in parallel.
+    flushPendingCompletions(resolvedUser.id);
+  }
+
+  function restoreCachedSession(){
+    try {
+      const cached = JSON.parse(sessionStorage.getItem(BOOTSTRAP_CACHE_KEY) || 'null');
+      if(!cached?.user?.id || !cached?.result) return false;
+      hydrateUserData(cached.user, cached.result);
+      return true;
+    } catch(error){
+      console.warn('Cached app data could not be restored:', error);
+      try { sessionStorage.removeItem(BOOTSTRAP_CACHE_KEY); } catch(_) {}
+      return false;
+    }
   }
 
   async function login(email, password){
@@ -3156,21 +3270,20 @@ const Store = (() => {
     } catch(error){ return { ok:false, error:error.message }; }
   }
 
-  // The server keeps a secure session cookie across reloads. Call this once
-  // at startup so a returning user skips the login screen.
-  // so a returning user with a still-valid session skips the login screen.
+  // Refresh authentication and all essential app data in one request. A
+  // cached shell can stay interactive while this silent refresh happens.
   async function restoreSession(){
     try {
-      const data = await apiRequest('/api/auth');
-      try {
-        await loadUserData(data.user);
-      } catch(firstError){
-        console.warn('Session data restore failed; retrying once:', firstError);
-        await new Promise(resolve => setTimeout(resolve, 300));
-        await loadUserData(data.user);
-      }
+      const result = await apiRequest('/api/data?scope=bootstrap');
+      await loadUserData(result.user, result);
       return true;
     } catch(error){
+      // A transient refresh failure should not replace already-rendered cached
+      // data with a blocking error. A real 401 still returns to sign-in.
+      if(authUser && error.status !== 401){
+        console.warn('Background data refresh failed; keeping cached app data:', error);
+        return true;
+      }
       clearCache();
       return false;
     }
@@ -3321,6 +3434,7 @@ const Store = (() => {
   function completeSession(activity = 0){
     const u = currentUser();
     if(!u) return null;
+    const userId = authUser.id;
     const ts = Date.now();
     const details = typeof activity === 'number' ? { itemCount:activity } : (activity || {});
     const itemCount = Math.max(0, Math.round(Number(details.itemCount ?? details.wordCount ?? 0) || 0));
@@ -3349,18 +3463,23 @@ const Store = (() => {
     rec.rounds += 1;
     rec.words += itemCount;
     rec.activities.push(entry);
-    queueWrite(`profiles:${authUser.id}`, () => saveData('complete-session', {
+    const payload = {
       id, ts:new Date(ts).toISOString(), activityDate:key, kind:entry.kind, mode:entry.mode,
       modeLabel:entry.modeLabel, scopeLabel:entry.scopeLabel, itemCount, unit:entry.unit,
       correct, incorrect, accuracy, sessionsCompleted:u.sessionsCompleted,
-    }).catch(error => console.error('completeSession failed:', error)));
+    };
+    // Persist an outbox copy synchronously before the completion UI is shown.
+    // Keep it until a later bootstrap confirms that the server has the id;
+    // this lets the cached calendar render it immediately after any refresh.
+    rememberPendingCompletion(userId, payload);
+    entry._persisted = queueWrite(`profiles:${userId}`, () => saveData('complete-session', payload, { keepalive:true }));
     return entry;
   }
 
   function getCompletionDays(){ return completionDays; }
   function getTodayProgress(){ return getCompletionDays()[localDateKey()] || { rounds:0, words:0, activities:[] }; }
 
-  return { isValidEmail, login, signup, logout, restoreSession, isAuthed, currentUser, getVocab, addVocab, importVocab, updateVocab, deleteVocab, reviewVocab, getReviewStats, completeSession, getCompletionDays, getTodayProgress, localDateKey };
+  return { isValidEmail, login, signup, logout, restoreSession, restoreCachedSession, isAuthed, currentUser, getVocab, addVocab, importVocab, updateVocab, deleteVocab, reviewVocab, getReviewStats, completeSession, getCompletionDays, getTodayProgress, localDateKey };
 })();
 
 /* =====================================================================
@@ -3802,6 +3921,7 @@ document.getElementById('demoBtn').addEventListener('click', async () => {
 function showAppShell(){
   const authView = document.getElementById('authView');
   const appShell = document.getElementById('appShell');
+  document.body.classList.remove('has-session-hint');
   authView.style.display = 'none';
   appShell.hidden = false;
   renderUserChrome();
@@ -3818,6 +3938,20 @@ function showAppShell(){
   return appShell;
 }
 
+function refreshVisibleAppShell(){
+  renderUserChrome();
+  renderCurrentView(currentView);
+  AssistantChat?.onLogin();
+}
+
+function showSignedOut(){
+  document.body.classList.remove('has-session-hint');
+  const authView = document.getElementById('authView');
+  const appShell = document.getElementById('appShell');
+  appShell.hidden = true;
+  authView.style.display = 'flex';
+}
+
 function enterApp(){
   const authView = document.getElementById('authView');
   gsap.to(authView, {
@@ -3829,22 +3963,26 @@ function enterApp(){
   });
 }
 
-// The server persists the session cookie, but the UI still needs to check it on
-// load — restore it here so a returning user with a still-valid session
-// skips straight past the login screen instead of being asked to sign in again.
+// Paint the last confirmed app state immediately. The secure cookie and fresh
+// cloud data are then checked in one background request—never behind a loader.
+const restoredFromCache = Store.restoreCachedSession();
+if(restoredFromCache) queueMicrotask(() => showAppShell());
+
 (async () => {
   try {
     const restored = await Store.restoreSession();
     if(restored){
-      await HSKProgress.load(Store.currentUser().id).catch(error => {
+      if(restoredFromCache) refreshVisibleAppShell();
+      else showAppShell();
+      HSKProgress.load(Store.currentUser().id).then(() => {
+        if(currentView === 'hsk') renderHskHome();
+      }).catch(error => {
         console.warn('HSK progress restore failed:', error);
       });
-      showAppShell();
-    }
+    } else showSignedOut();
   } catch(error){
     console.error('Session startup failed:', error);
-  } finally {
-    document.body.classList.remove('auth-restoring');
+    showSignedOut();
   }
 })();
 
@@ -3866,11 +4004,9 @@ async function doLogout(){
   AssistantChat?.onLogout();
   await Store.logout();
   HSKProgress.clear();
-  const authView = document.getElementById('authView');
-  const appShell = document.getElementById('appShell');
-  appShell.hidden = true;
-  authView.style.display = 'flex';
+  showSignedOut();
   authForm.reset();
+  const authView = document.getElementById('authView');
   gsap.fromTo(authView, { opacity:0, y:-10 }, { opacity:1, y:0, duration:0.35*D, ease:"power2.out" });
 }
 document.getElementById('logoutBtnSidebar').addEventListener('click', doLogout);
